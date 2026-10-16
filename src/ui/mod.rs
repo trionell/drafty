@@ -1,4 +1,4 @@
 mod help;
 mod menu;
-mod tabs;
+pub mod tabs;
 mod toolbar;

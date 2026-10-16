@@ -74,6 +74,7 @@ Shapes have stroke color, stroke width and a fill option: none, solid, or transl
 - Double-click a tab to rename it. New tabs get "Board 1", "Board 2" and so on.
 - Each tab has its own undo history and view position.
 - Middle-click closes a tab. Drag to reorder is a later nice-to-have.
+- Tabs share the width equally and shrink as more open, down to a minimum, then the strip scrolls. Long titles end in "…". The active tab has the toolbar's color and curves into it. The close button shows on hover and on the active tab; a dot marks unsaved changes to a saved file.
 
 ### Saving
 
@@ -159,7 +160,8 @@ Done when you can draw, change color, undo and redo.
 - Hit testing for every object type.
 - Click select, box select, shift-add.
 - Move, resize with 8 handles, delete, duplicate with `Ctrl+D`.
-- Bring to front and send to back with `Ctrl+]` and `Ctrl+[`.
+- Stacking order: `Ctrl+]` brings forward one step, `Ctrl+Shift+]` to the front. `Ctrl+[` and `Ctrl+Shift+[` go backward the same way. Same keys as Figma and Google Slides.
+- Right-click menu. On an object: edit text, cut, copy, paste, duplicate, delete, the four stacking moves, copy as PNG, select all. Right-clicking an object selects it first and switches to the select tool. On empty board: paste, select all, copy board as PNG, export. Paste lands where you right-clicked.
 - Style bar edits the selection.
 - Arrow keys nudge 1 px, shift+arrow 10 px.
 

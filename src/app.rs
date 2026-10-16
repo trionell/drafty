@@ -1537,7 +1537,11 @@ impl App {
         self.handle_dropped_files(&ctx);
         self.handle_events(&ctx);
 
-        egui::Panel::top("tabs").show(ui, |ui| self.tab_bar(ui));
+        let tab_frame = crate::ui::tabs::bar_frame(ui.visuals());
+        egui::Panel::top("tabs")
+            .frame(tab_frame)
+            .show_separator_line(false)
+            .show(ui, |ui| self.tab_bar(ui));
         egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)

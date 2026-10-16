@@ -46,7 +46,8 @@ src/
     export.rs        Draws a Document into a tiny_skia::Pixmap
   ui/
     toolbar.rs       Tool buttons and style bar, painted icons
-    tabs.rs          Tab strip
+    tabs.rs          Tab strip, painted by hand
+    menu.rs          Right-click menu
     help.rs          Shortcut overlay and close prompt
 assets/              Inter font and license, icons, .desktop and MIME files
 scripts/             bundle-macos.sh
@@ -157,6 +158,14 @@ A press and release can land in the same frame on a quick click. The canvas feed
 - Eight handles resize the selection's bounds. Shift on a corner keeps the aspect ratio. The handles sit on bounds including stroke width, but the geometry gets mapped between bounds without stroke width, so a shape's corner stays exactly where it was drawn.
 - A single selected line or arrow gets two endpoint handles instead.
 - Double-clicking text edits it.
+
+### Context menu
+
+A right-click press on the board commits any text being typed, then hit-tests. Hitting an object selects it, unless it's already part of the selection, and switches to the select tool so the selection is visible. Missing everything clears the selection. egui opens the menu on release.
+
+Menu entries are a `MenuItem` enum and `App::run_menu` does the work, so tests can trigger entries without finding buttons on screen. Stacking moves are `Edit::Reorder(ids, Order)`. Forward and backward move each selected object one step past its unselected neighbor, so a selected block moves together. `Document::can_reorder` greys out moves that would change nothing, and `apply` skips them so they don't add undo steps.
+
+While any popup is open, a click on the board only closes it. That covers the context menu and the color picker.
 
 ## Undo and history
 

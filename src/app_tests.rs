@@ -108,6 +108,18 @@ impl Harness {
         self.frame(vec![]);
     }
 
+    /// Click at a screen position, for UI outside the board.
+    fn click_screen(&mut self, p: Pos2, double: bool) {
+        self.frame(vec![Event::PointerMoved(p)]);
+        if double {
+            self.time -= 0.55;
+            self.frame(vec![self.button(p, true), self.button(p, false)]);
+            self.time -= 0.55;
+        }
+        self.frame(vec![self.button(p, true), self.button(p, false)]);
+        self.frame(vec![]);
+    }
+
     fn right_click(&mut self, at: Pos2) {
         let p = self.screen(at);
         let ev = |pressed| Event::PointerButton {
@@ -586,6 +598,41 @@ fn menu_paste_goes_where_you_right_clicked() {
         panic!()
     };
     assert!(((a + b.to_vec2()) / 2.0).distance(pos2(500.0, 400.0)) < 0.01);
+}
+
+#[test]
+fn tab_strip_switch_close_rename_and_new() {
+    let mut h = Harness::new("tabstrip");
+    h.cmd(Key::T);
+    assert_eq!(h.app.active, 1);
+    // Tabs start after the 4 px margin and 6 px flare, 32 px tall under a 6 px margin,
+    // 210 px wide at this window size, with 2 px gaps.
+    let tab = |i: f32| pos2(10.0 + i * 212.0 + 105.0, 22.0);
+    let close = |i: f32| pos2(10.0 + i * 212.0 + 210.0 - 17.0, 22.0);
+
+    h.click_screen(tab(0.0), false);
+    assert_eq!(h.app.active, 0);
+
+    h.click_screen(close(1.0), false);
+    assert_eq!(h.app.docs.len(), 1, "empty tab closes without asking");
+
+    h.click_screen(tab(0.0), true);
+    assert!(h.app.renaming.is_some());
+    h.frame(vec![Event::Key {
+        key: Key::A,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::COMMAND,
+    }]);
+    h.frame(vec![Event::Text("Plan".into())]);
+    h.key(Key::Enter);
+    assert!(h.app.renaming.is_none());
+    assert_eq!(h.app.doc().title, "Plan");
+
+    // The + button sits right after the last tab and the flare space.
+    h.click_screen(pos2(10.0 + 210.0 + 2.0 + 6.0 + 2.0 + 14.0, 22.0), false);
+    assert_eq!(h.app.docs.len(), 2);
 }
 
 #[test]
