@@ -66,6 +66,16 @@ pub fn bounds(kind: &ObjectKind) -> Rect {
     }
 }
 
+/// Bounds of the geometry alone, without stroke width. Resizing maps these, so a
+/// shape's corner stays where the user put it.
+pub fn shape_bounds(kind: &ObjectKind) -> Rect {
+    match kind {
+        ObjectKind::Stroke { points, .. } => Rect::from_points(points),
+        ObjectKind::Shape { a, b, .. } => norm_rect(*a, *b),
+        ObjectKind::Text { .. } | ObjectKind::Image { .. } => bounds(kind),
+    }
+}
+
 pub fn union_bounds<'a>(kinds: impl Iterator<Item = &'a ObjectKind>) -> Option<Rect> {
     kinds.map(bounds).reduce(|a, b| a.union(b))
 }

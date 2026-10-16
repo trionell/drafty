@@ -21,11 +21,6 @@ impl History {
         self.redo.clear();
     }
 
-    /// Drop the last checkpoint, for a drag that ended without changing anything.
-    pub fn discard_last(&mut self) {
-        self.undo.pop();
-    }
-
     pub fn undo(&mut self, current: &[Arc<Object>]) -> Option<Vec<Arc<Object>>> {
         let prev = self.undo.pop()?;
         self.redo.push(current.to_vec());

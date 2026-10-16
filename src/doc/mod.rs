@@ -217,19 +217,19 @@ impl Default for Camera {
 }
 
 impl Camera {
-    pub fn to_screen(&self, p: Pos2) -> Pos2 {
+    pub fn to_screen(self, p: Pos2) -> Pos2 {
         self.origin + p.to_vec2() * self.zoom + self.offset
     }
 
-    pub fn to_board(&self, p: Pos2) -> Pos2 {
+    pub fn to_board(self, p: Pos2) -> Pos2 {
         ((p - self.origin - self.offset) / self.zoom).to_pos2()
     }
 
-    pub fn rect_to_screen(&self, r: Rect) -> Rect {
+    pub fn rect_to_screen(self, r: Rect) -> Rect {
         Rect::from_min_max(self.to_screen(r.min), self.to_screen(r.max))
     }
 
-    pub fn rect_to_board(&self, r: Rect) -> Rect {
+    pub fn rect_to_board(self, r: Rect) -> Rect {
         Rect::from_min_max(self.to_board(r.min), self.to_board(r.max))
     }
 

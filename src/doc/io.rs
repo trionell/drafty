@@ -176,12 +176,11 @@ fn object_to_file(
         },
         ObjectKind::Image { image, rect } => {
             let key = image.to_hex();
-            if !images.contains_key(&key) {
-                if let Some(data) = doc.images.get(image) {
+            if !images.contains_key(&key)
+                && let Some(data) = doc.images.get(image) {
                     let b64 = base64::engine::general_purpose::STANDARD.encode(&*data.encoded());
                     images.insert(key.clone(), b64);
                 }
-            }
             FileObject::Image {
                 image: key,
                 rect: [r2(rect.min.x), r2(rect.min.y), r2(rect.max.x), r2(rect.max.y)],
