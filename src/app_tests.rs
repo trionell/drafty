@@ -399,8 +399,44 @@ fn zoom_and_pan_keep_drawing_in_board_space() {
     assert!(points[0].distance(start) < 1.0);
     assert!(points.last().unwrap().distance(end) < 1.0);
     assert_eq!(style.width, 4.0, "width is in board units, not screen units");
+    h.cmd(Key::Minus);
+    assert_eq!(h.ctx.zoom_factor(), 1.0, "the UI itself must not zoom");
+    assert!((h.app.doc().camera.zoom - 1.25).abs() < 1e-3);
     h.cmd(Key::Num0);
     assert!((h.app.doc().camera.zoom - 1.0).abs() < 1e-4);
+}
+
+#[test]
+fn scroll_pans_and_ctrl_scroll_zooms() {
+    let mut h = Harness::new("scroll");
+    let wheel = |delta, modifiers| Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta,
+        phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Unknown,
+        modifiers,
+    };
+    let p = pos2(600.0, 400.0);
+    h.frame(vec![Event::PointerMoved(p)]);
+    let before = h.app.doc().camera;
+    h.frame(vec![wheel(vec2(0.0, -50.0), Modifiers::NONE)]);
+    for _ in 0..20 {
+        h.frame(vec![]);
+    }
+    let after = h.app.doc().camera;
+    assert_eq!(after.zoom, before.zoom);
+    assert!(after.offset.y < before.offset.y - 10.0, "scroll pans: {:?} -> {:?}", before.offset, after.offset);
+
+    let board = after.to_board(p);
+    h.mods = Modifiers::COMMAND;
+    h.frame(vec![wheel(vec2(0.0, 50.0), Modifiers::COMMAND)]);
+    h.mods = Modifiers::NONE;
+    for _ in 0..20 {
+        h.frame(vec![]);
+    }
+    let cam = h.app.doc().camera;
+    assert!(cam.zoom > 1.0, "ctrl+scroll zooms in: {}", cam.zoom);
+    assert!((cam.to_screen(board) - p).length() < 0.5, "zoom keeps the point under the cursor");
 }
 
 #[test]

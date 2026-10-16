@@ -223,6 +223,8 @@ impl App {
     pub fn new(ctx: &Context, files: Vec<PathBuf>, session: Session, clipboard: Clipboard) -> Self {
         let ctx = ctx.clone();
         install_fonts(&ctx);
+        // Ctrl+Plus/Minus/0 zoom the board, not the whole UI.
+        ctx.options_mut(|o| o.zoom_with_keyboard = false);
 
         let restored = session.load();
         let (docs, active, grid) = match restored {
