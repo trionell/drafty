@@ -84,6 +84,12 @@ impl Clipboard {
         Err(err)
     }
 
+    /// Text on the clipboard, empty if it holds something else. `None` only when there's
+    /// no clipboard to read.
+    pub fn get_text(&mut self) -> Option<String> {
+        Some(self.inner.as_mut()?.get_text().unwrap_or_default())
+    }
+
     pub fn set_text(&mut self, text: &str) {
         if let Some(cb) = &mut self.inner {
             let _ = cb.set_text(text);

@@ -311,8 +311,48 @@ pub enum Edit {
     Remove(HashSet<ObjectId>),
     /// Replace objects with the same ids.
     Replace(Vec<Object>),
-    ToFront(HashSet<ObjectId>),
-    ToBack(HashSet<ObjectId>),
+    Reorder(HashSet<ObjectId>, Order),
+}
+
+/// Where `Edit::Reorder` moves objects in the stack.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Order {
+    Front,
+    Forward,
+    Backward,
+    Back,
+}
+
+/// `objects` with `ids` moved. Forward and Backward move each object one step past its
+/// unselected neighbor, so a block of selected objects moves together.
+fn reordered(objects: &[Arc<Object>], ids: &HashSet<ObjectId>, order: Order) -> Vec<Arc<Object>> {
+    let mut v = objects.to_vec();
+    let sel = |o: &Arc<Object>| ids.contains(&o.id);
+    match order {
+        Order::Front | Order::Back => {
+            let (moved, rest): (Vec<_>, Vec<_>) = v.into_iter().partition(|o| sel(o));
+            v = if order == Order::Front {
+                rest.into_iter().chain(moved).collect()
+            } else {
+                moved.into_iter().chain(rest).collect()
+            };
+        }
+        Order::Forward => {
+            for i in (0..v.len().saturating_sub(1)).rev() {
+                if sel(&v[i]) && !sel(&v[i + 1]) {
+                    v.swap(i, i + 1);
+                }
+            }
+        }
+        Order::Backward => {
+            for i in 1..v.len() {
+                if sel(&v[i]) && !sel(&v[i - 1]) {
+                    v.swap(i - 1, i);
+                }
+            }
+        }
+    }
+    v
 }
 
 impl Document {
@@ -368,9 +408,24 @@ impl Document {
         self.history.push(&self.objects);
     }
 
+    /// Would reordering `ids` change anything? An object already on top can't go forward.
+    pub fn can_reorder(&self, ids: &HashSet<ObjectId>, order: Order) -> bool {
+        !ids.is_empty()
+            && reordered(&self.objects, ids, order)
+                .iter()
+                .zip(&self.objects)
+                .any(|(a, b)| a.id != b.id)
+    }
+
     /// Apply an edit as one undo step. Returns the ids of added objects.
     pub fn apply(&mut self, edit: Edit) -> Vec<ObjectId> {
-        if is_noop(&edit) {
+        let noop = match &edit {
+            Edit::Add(v) => v.is_empty(),
+            Edit::Replace(v) => v.is_empty(),
+            Edit::Remove(s) => s.is_empty(),
+            Edit::Reorder(s, order) => !self.can_reorder(s, *order),
+        };
+        if noop {
             return Vec::new();
         }
         self.checkpoint();
@@ -402,18 +457,7 @@ impl Document {
                     }
                 }
             }
-            Edit::ToFront(ids) => {
-                let (moved, rest): (Vec<_>, Vec<_>) =
-                    self.objects.drain(..).partition(|o| ids.contains(&o.id));
-                self.objects = rest;
-                self.objects.extend(moved);
-            }
-            Edit::ToBack(ids) => {
-                let (mut moved, rest): (Vec<_>, Vec<_>) =
-                    self.objects.drain(..).partition(|o| ids.contains(&o.id));
-                moved.extend(rest);
-                self.objects = moved;
-            }
+            Edit::Reorder(ids, order) => self.objects = reordered(&self.objects, &ids, order),
         }
         self.touch();
         added
@@ -466,14 +510,6 @@ impl Document {
             .iter()
             .rev()
             .find(|o| geom::hit(&o.kind, p, tolerance))
-    }
-}
-
-fn is_noop(edit: &Edit) -> bool {
-    match edit {
-        Edit::Add(v) => v.is_empty(),
-        Edit::Replace(v) => v.is_empty(),
-        Edit::Remove(s) | Edit::ToFront(s) | Edit::ToBack(s) => s.is_empty(),
     }
 }
 
@@ -531,10 +567,38 @@ mod tests {
             rect_kind(1.0),
             rect_kind(2.0),
         ]));
-        doc.apply(Edit::ToFront(HashSet::from([ids[0]])));
-        assert_eq!(doc.objects.last().unwrap().id, ids[0]);
-        doc.apply(Edit::ToBack(HashSet::from([ids[2]])));
-        assert_eq!(doc.objects[0].id, ids[2]);
+        let order = |doc: &Document| doc.objects.iter().map(|o| o.id).collect::<Vec<_>>();
+        let one = |i: usize| HashSet::from([ids[i]]);
+
+        doc.apply(Edit::Reorder(one(0), Order::Front));
+        assert_eq!(order(&doc), [ids[1], ids[2], ids[0]]);
+        doc.apply(Edit::Reorder(one(0), Order::Back));
+        assert_eq!(order(&doc), [ids[0], ids[1], ids[2]]);
+        doc.apply(Edit::Reorder(one(0), Order::Forward));
+        assert_eq!(order(&doc), [ids[1], ids[0], ids[2]]);
+        doc.apply(Edit::Reorder(one(2), Order::Backward));
+        assert_eq!(order(&doc), [ids[1], ids[2], ids[0]]);
+        // A block of two moves as one.
+        doc.apply(Edit::Reorder(
+            HashSet::from([ids[1], ids[2]]),
+            Order::Forward,
+        ));
+        assert_eq!(order(&doc), [ids[0], ids[1], ids[2]]);
+    }
+
+    #[test]
+    fn reorder_that_changes_nothing_adds_no_undo_step() {
+        let mut doc = Document::new("t");
+        let ids = doc.apply(Edit::Add(vec![rect_kind(0.0), rect_kind(1.0)]));
+        let top = HashSet::from([ids[1]]);
+        assert!(!doc.can_reorder(&top, Order::Front));
+        assert!(!doc.can_reorder(&top, Order::Forward));
+        assert!(doc.can_reorder(&top, Order::Backward));
+        let rev = doc.rev;
+        doc.apply(Edit::Reorder(top, Order::Forward));
+        assert_eq!(doc.rev, rev);
+        doc.undo();
+        assert!(doc.objects.is_empty(), "the only undo step is the add");
     }
 
     #[test]

@@ -9,7 +9,7 @@ use egui::{
 };
 
 use crate::clipboard::{Clipboard, ObjectClip};
-use crate::doc::{Document, Edit, ImageData, ImageId, Object, ObjectId, ObjectKind, io};
+use crate::doc::{Document, Edit, ImageData, ImageId, Object, ObjectId, ObjectKind, Order, io};
 use crate::render::export::{self, ExportOptions};
 use crate::render::screen::{self, RenderCache, Renderer};
 use crate::session::{self, Session};
@@ -30,8 +30,7 @@ pub enum Action {
     Delete,
     Duplicate,
     SelectAll,
-    ToFront,
-    ToBack,
+    Reorder(Order),
     CopyPng,
     ExportPng,
     NewTab,
@@ -167,8 +166,39 @@ fn shortcuts() -> Vec<Shortcut> {
         S::new(Key::Backspace, A::Delete, None),
         S::new(Key::D, A::Duplicate, Some("Duplicate")).cmd(),
         S::new(Key::A, A::SelectAll, Some("Select all")).cmd(),
-        S::new(Key::CloseBracket, A::ToFront, Some("Bring to front")).cmd(),
-        S::new(Key::OpenBracket, A::ToBack, Some("Send to back")).cmd(),
+        S::new(
+            Key::CloseBracket,
+            A::Reorder(Order::Forward),
+            Some("Bring forward"),
+        )
+        .cmd(),
+        S::new(
+            Key::CloseBracket,
+            A::Reorder(Order::Front),
+            Some("Bring to front"),
+        )
+        .cmd()
+        .shift(),
+        // Shift+] arrives as } on most layouts.
+        S::new(Key::CloseCurlyBracket, A::Reorder(Order::Front), None)
+            .cmd()
+            .any_shift(),
+        S::new(
+            Key::OpenBracket,
+            A::Reorder(Order::Backward),
+            Some("Send backward"),
+        )
+        .cmd(),
+        S::new(
+            Key::OpenBracket,
+            A::Reorder(Order::Back),
+            Some("Send to back"),
+        )
+        .cmd()
+        .shift(),
+        S::new(Key::OpenCurlyBracket, A::Reorder(Order::Back), None)
+            .cmd()
+            .any_shift(),
         S::new(Key::C, A::CopyPng, Some("Copy board (or selection) as PNG"))
             .cmd()
             .shift(),
@@ -206,6 +236,21 @@ fn shortcuts() -> Vec<Shortcut> {
         S::new(Key::ArrowDown, A::Nudge(0.0, 10.0), None).shift(),
     ]);
     v
+}
+
+/// Entries of the board's right-click menu.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum MenuItem {
+    EditText(ObjectId),
+    Cut,
+    Copy,
+    Paste,
+    Duplicate,
+    Delete,
+    Reorder(Order),
+    CopyPng,
+    ExportPng,
+    SelectAll,
 }
 
 /// Text being typed. Drawn as an egui `TextEdit` over the canvas, committed as an object
@@ -249,6 +294,8 @@ pub struct App {
     /// A width slider drag in progress edits the selection without an undo step per frame.
     pub style_drag: bool,
     last_title: String,
+    /// Board point of the last right-click. The menu's Paste goes there.
+    pub menu_at: Option<Pos2>,
     startup_files: Option<Vec<PathBuf>>,
 }
 
@@ -293,6 +340,7 @@ impl App {
             last_pointer: Pos2::ZERO,
             style_drag: false,
             last_title: String::new(),
+            menu_at: None,
             startup_files: None,
         };
         app.startup_files = Some(files);
@@ -438,14 +486,14 @@ impl App {
                 _ if dialog => {}
                 Event::Copy => self.copy_objects(false),
                 Event::Cut => self.copy_objects(true),
-                Event::Paste(text) => self.paste_text(text),
+                Event::Paste(text) => self.paste(Some(text), None),
                 Event::PasteImage(img) => {
                     let rgba: Vec<u8> = img
                         .pixels
                         .iter()
                         .flat_map(|c| c.to_srgba_unmultiplied())
                         .collect();
-                    self.insert_rgba([img.size[0] as u32, img.size[1] as u32], rgba, false);
+                    self.insert_rgba([img.size[0] as u32, img.size[1] as u32], rgba, false, None);
                 }
                 _ => {}
             }
@@ -495,14 +543,9 @@ impl App {
                 let doc = self.doc_mut();
                 doc.selection = doc.objects.iter().map(|o| o.id).collect();
             }
-            A::ToFront | A::ToBack => {
+            A::Reorder(order) => {
                 let sel = self.doc().selection.clone();
-                let edit = if action == A::ToFront {
-                    Edit::ToFront(sel)
-                } else {
-                    Edit::ToBack(sel)
-                };
-                self.doc_mut().apply(edit);
+                self.doc_mut().apply(Edit::Reorder(sel, order));
             }
             A::CopyPng => self.copy_png(),
             A::ExportPng => self.export_png(),
@@ -515,7 +558,7 @@ impl App {
             A::SaveAs => self.save(true),
             A::Open => self.open_dialog(),
             A::PasteNewTab => match self.clipboard.get_image() {
-                Some(img) => self.insert_rgba(img.size, img.rgba, true),
+                Some(img) => self.insert_rgba(img.size, img.rgba, true, None),
                 None => self.toast("No image on the clipboard"),
             },
             A::ZoomReset => {
@@ -725,7 +768,7 @@ impl App {
 
     // ---- Text ----
 
-    fn begin_text(&mut self, target: Option<ObjectId>, pos: Pos2) {
+    pub(crate) fn begin_text(&mut self, target: Option<ObjectId>, pos: Pos2) {
         let doc_id = self.doc().session_id.clone();
         let (text, size, color, pos) =
             match target.and_then(|id| self.doc().get(id)).map(|o| &o.kind) {
@@ -827,9 +870,62 @@ impl App {
         }
     }
 
+    // ---- Context menu ----
+
+    /// Right-click on the board: select what's under the pointer, like a left click with
+    /// the select tool would, so the menu acts on it.
+    fn open_context_menu(&mut self, pos: Pos2, px: f32) {
+        self.commit_text();
+        self.cancel_ops();
+        self.menu_at = Some(pos);
+        let hit = self.doc().hit(pos, 4.0 * px).map(|o| o.id);
+        match hit {
+            Some(id) => {
+                if self.tool != Tool::Select {
+                    self.set_tool(Tool::Select);
+                }
+                if !self.doc().selection.contains(&id) {
+                    self.doc_mut().selection = HashSet::from([id]);
+                }
+            }
+            None => self.doc_mut().selection.clear(),
+        }
+    }
+
+    pub fn run_menu(&mut self, item: MenuItem) {
+        let at = self.menu_at;
+        match item {
+            MenuItem::EditText(id) => {
+                let pos = at.unwrap_or_default();
+                self.begin_text(Some(id), pos);
+            }
+            MenuItem::Cut => self.copy_objects(true),
+            MenuItem::Copy => self.copy_objects(false),
+            MenuItem::Paste => {
+                let text = self.clipboard.get_text();
+                self.paste(text, at);
+            }
+            MenuItem::Duplicate => self.run(Action::Duplicate),
+            MenuItem::Delete => self.run(Action::Delete),
+            MenuItem::Reorder(order) => self.run(Action::Reorder(order)),
+            MenuItem::CopyPng => self.copy_png(),
+            MenuItem::ExportPng => self.export_png(),
+            MenuItem::SelectAll => self.run(Action::SelectAll),
+        }
+    }
+
+    /// The label of the first shortcut bound to `action`, for menus.
+    pub fn shortcut_label(&self, action: Action) -> String {
+        self.shortcuts
+            .iter()
+            .find(|s| s.action == action)
+            .map(|s| s.label())
+            .unwrap_or_default()
+    }
+
     // ---- Clipboard ----
 
-    fn copy_objects(&mut self, cut: bool) {
+    pub(crate) fn copy_objects(&mut self, cut: bool) {
         let doc = self.doc();
         if doc.selection.is_empty() {
             return;
@@ -868,8 +964,12 @@ impl App {
         self.object_clip.as_ref().map(|c| c.marker.clone())
     }
 
-    /// Where pasted things go: under the cursor if it's on the board, else the view center.
-    fn paste_point(&self) -> Pos2 {
+    /// Where pasted things go: `at` if given, else under the cursor if it's on the board,
+    /// else the view center.
+    fn paste_point(&self, at: Option<Pos2>) -> Pos2 {
+        if let Some(p) = at {
+            return p;
+        }
         let cam = self.doc().camera;
         let p = if self.canvas_rect.contains(self.last_pointer) {
             self.last_pointer
@@ -879,17 +979,22 @@ impl App {
         cam.to_board(p)
     }
 
-    fn paste_text(&mut self, text: String) {
+    /// Paste at `at` (board coordinates) or the default spot. `text` is the clipboard's
+    /// text, or `None` if it couldn't be read.
+    fn paste(&mut self, text: Option<String>, at: Option<Pos2>) {
         // Prefer an image when the clipboard has one, e.g. a browser image copy with a URL.
         if let Some(img) = self.clipboard.get_image() {
-            self.insert_rgba(img.size, img.rgba, false);
+            self.insert_rgba(img.size, img.rgba, false, at);
             return;
         }
-        if let Some(clip) = self.object_clip.as_ref().filter(|c| c.marker == text) {
+        // Our objects, if the marker from copying them is still on the clipboard. If the
+        // clipboard can't be read at all, assume nothing replaced them.
+        let ours = |c: &&ObjectClip| text.as_ref().is_none_or(|t| *t == c.marker);
+        if let Some(clip) = self.object_clip.as_ref().filter(ours) {
             let Some(bounds) = crate::doc::geom::union_bounds(clip.objects.iter()) else {
                 return;
             };
-            let d = self.paste_point() - bounds.center();
+            let d = self.paste_point(at) - bounds.center();
             let kinds: Vec<_> = clip
                 .objects
                 .iter()
@@ -909,13 +1014,15 @@ impl App {
             self.doc_mut().selection = ids.into_iter().collect();
             return;
         }
-        let text = text.trim_end().to_owned();
-        if text.is_empty() {
+        let Some(text) = text
+            .map(|t| t.trim_end().to_owned())
+            .filter(|t| !t.is_empty())
+        else {
             return;
-        }
+        };
         let size = self.settings.font_size;
         let extent = screen::measure_text(&self.ctx, &text, size);
-        let pos = self.paste_point() - extent * 0.5;
+        let pos = self.paste_point(at) - extent * 0.5;
         let kind = ObjectKind::Text {
             pos,
             text,
@@ -928,9 +1035,9 @@ impl App {
         self.doc_mut().selection = ids.into_iter().collect();
     }
 
-    fn insert_rgba(&mut self, size: [u32; 2], rgba: Vec<u8>, new_tab: bool) {
+    fn insert_rgba(&mut self, size: [u32; 2], rgba: Vec<u8>, new_tab: bool, at: Option<Pos2>) {
         let (id, data) = ImageData::from_rgba(size, rgba);
-        self.insert_image(id, data, new_tab, None);
+        self.insert_image(id, data, new_tab, at);
     }
 
     /// Add an image at its native size in screen pixels, so a HiDPI screenshot doesn't
@@ -945,7 +1052,7 @@ impl App {
         let center = if new_tab {
             Pos2::ZERO + size * 0.5
         } else {
-            at.unwrap_or_else(|| self.paste_point())
+            self.paste_point(at)
         };
         let doc = self.doc_mut();
         doc.add_image(id, data);
@@ -971,7 +1078,7 @@ impl App {
         export::render(&self.ctx, doc, only, ExportOptions::default())
     }
 
-    fn copy_png(&mut self) {
+    pub(crate) fn copy_png(&mut self) {
         self.commit_text();
         let Some(pixmap) = self.render_export() else {
             self.toast("Nothing to copy");
@@ -992,7 +1099,7 @@ impl App {
         }
     }
 
-    fn export_png(&mut self) {
+    pub(crate) fn export_png(&mut self) {
         self.commit_text();
         let Some(pixmap) = self.render_export() else {
             self.toast("Nothing to export");
@@ -1153,6 +1260,7 @@ impl App {
             middle_down,
             delta,
             space,
+            secondary,
         ) = ctx.input(|i| {
             (
                 i.pointer.latest_pos(),
@@ -1168,6 +1276,7 @@ impl App {
                 i.pointer.middle_down(),
                 i.pointer.delta(),
                 i.key_down(Key::Space) && !typing,
+                i.pointer.secondary_pressed(),
             )
         });
         if let Some(p) = pointer {
@@ -1194,8 +1303,10 @@ impl App {
             }
         }
 
-        // A click on the board while typing only finishes the text.
-        if pressed && hovered && self.text.is_some() && !self.panning {
+        // A click on the board while typing only finishes the text. A click that closes a
+        // menu or color picker only closes it.
+        let popup_open = egui::Popup::is_any_open(&ctx);
+        if pressed && hovered && (self.text.is_some() || popup_open) && !self.panning {
             self.commit_text();
             self.swallow_press = true;
         }
@@ -1203,6 +1314,9 @@ impl App {
         let cam = self.doc().camera;
         let px = 1.0 / cam.zoom;
         let pos = cam.to_board(pointer.unwrap_or(self.last_pointer));
+        if secondary && hovered && !self.capturing && !self.panning {
+            self.open_context_menu(pos, px);
+        }
         if !self.panning && !self.swallow_press {
             let start = pressed && hovered;
             if start {
@@ -1269,6 +1383,7 @@ impl App {
         }
 
         self.paint_canvas(&ctx, ui, rect, pointer.filter(|_| hovered));
+        response.context_menu(|ui| self.context_menu_ui(ui));
     }
 
     fn tool_input(&mut self, input: Input) {

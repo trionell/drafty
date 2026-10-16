@@ -4,9 +4,9 @@ use std::path::PathBuf;
 
 use egui::{Context, Event, Key, Modifiers, PointerButton, Pos2, RawInput, Rect, pos2, vec2};
 
-use crate::app::App;
+use crate::app::{App, MenuItem};
 use crate::clipboard::Clipboard;
-use crate::doc::{ObjectKind, ShapeKind};
+use crate::doc::{ObjectKind, Order, ShapeKind};
 use crate::session::Session;
 use crate::tools::Tool;
 
@@ -106,6 +106,28 @@ impl Harness {
         self.frame(vec![Event::PointerMoved(p)]);
         self.frame(vec![self.button(p, true), self.button(p, false)]);
         self.frame(vec![]);
+    }
+
+    fn right_click(&mut self, at: Pos2) {
+        let p = self.screen(at);
+        let ev = |pressed| Event::PointerButton {
+            pos: p,
+            button: PointerButton::Secondary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        self.frame(vec![Event::PointerMoved(p)]);
+        self.frame(vec![ev(true)]);
+        self.frame(vec![ev(false)]);
+        self.frame(vec![]);
+    }
+
+    fn menu_open(&self) -> bool {
+        egui::Popup::is_any_open(&self.ctx)
+    }
+
+    fn ids(&self) -> Vec<crate::doc::ObjectId> {
+        self.app.doc().objects.iter().map(|o| o.id).collect()
     }
 
     fn double_click(&mut self, at: Pos2) {
@@ -463,6 +485,107 @@ fn keys_dont_reach_the_board_behind_a_dialog() {
     assert!(!h.app.show_help);
     h.key(Key::Delete);
     assert!(h.kinds().is_empty());
+}
+
+#[test]
+fn right_click_selects_object_and_opens_menu() {
+    let mut h = Harness::new("rclick");
+    h.drag(pos2(100.0, 100.0), pos2(200.0, 100.0));
+    assert_eq!(h.app.tool, Tool::Pen);
+    h.right_click(pos2(150.0, 100.0));
+    assert!(h.menu_open());
+    assert_eq!(h.app.tool, Tool::Select, "so the selection shows");
+    assert_eq!(h.app.doc().selection.len(), 1);
+}
+
+#[test]
+fn right_click_keeps_a_multi_selection() {
+    let mut h = Harness::new("rclick-multi");
+    h.drag(pos2(100.0, 100.0), pos2(200.0, 100.0));
+    h.drag(pos2(100.0, 200.0), pos2(200.0, 200.0));
+    h.cmd(Key::A);
+    h.right_click(pos2(150.0, 200.0));
+    assert_eq!(h.app.doc().selection.len(), 2);
+}
+
+#[test]
+fn click_that_closes_the_menu_does_nothing_else() {
+    let mut h = Harness::new("rclick-close");
+    h.right_click(pos2(400.0, 400.0));
+    assert!(h.menu_open());
+    assert_eq!(h.app.tool, Tool::Pen, "empty spot: tool stays");
+    h.click(pos2(100.0, 100.0));
+    assert!(!h.menu_open());
+    assert!(
+        h.kinds().is_empty(),
+        "the closing click must not draw a dot"
+    );
+    h.click(pos2(100.0, 100.0));
+    assert_eq!(h.kinds().len(), 1, "the next click draws again");
+}
+
+#[test]
+fn menu_reorders_selection() {
+    let mut h = Harness::new("menu-order");
+    h.key(Key::R);
+    for i in 0..3 {
+        let o = i as f32 * 20.0;
+        h.drag(pos2(100.0 + o, 100.0 + o), pos2(200.0 + o, 200.0 + o));
+    }
+    let ids = h.ids();
+    // The top rectangle's right edge.
+    h.right_click(pos2(240.0, 180.0));
+    assert_eq!(h.app.doc().selection, [ids[2]].into());
+    h.app.run_menu(MenuItem::Reorder(Order::Back));
+    assert_eq!(h.ids(), [ids[2], ids[0], ids[1]]);
+    h.app.run_menu(MenuItem::Reorder(Order::Forward));
+    assert_eq!(h.ids(), [ids[0], ids[2], ids[1]]);
+    // Already at the bottom after this; a second step changes nothing.
+    h.app.run_menu(MenuItem::Reorder(Order::Backward));
+    h.app.run_menu(MenuItem::Reorder(Order::Backward));
+    assert_eq!(h.ids(), [ids[2], ids[0], ids[1]]);
+    h.cmd(Key::Z);
+    assert_eq!(
+        h.ids(),
+        [ids[0], ids[2], ids[1]],
+        "the no-op step added no undo entry"
+    );
+}
+
+#[test]
+fn reorder_shortcuts() {
+    let mut h = Harness::new("order-keys");
+    h.drag(pos2(100.0, 100.0), pos2(200.0, 100.0));
+    h.drag(pos2(100.0, 120.0), pos2(200.0, 120.0));
+    h.drag(pos2(100.0, 140.0), pos2(200.0, 140.0));
+    let ids = h.ids();
+    h.key(Key::V);
+    h.click(pos2(150.0, 100.0));
+    h.cmd(Key::CloseBracket);
+    assert_eq!(h.ids(), [ids[1], ids[0], ids[2]]);
+    // Ctrl+Shift+] arrives as } on a US layout.
+    h.key_with(
+        Key::CloseCurlyBracket,
+        Modifiers::COMMAND | Modifiers::SHIFT,
+    );
+    assert_eq!(h.ids(), [ids[1], ids[2], ids[0]]);
+    h.cmd_shift(Key::OpenBracket);
+    assert_eq!(h.ids(), [ids[0], ids[1], ids[2]]);
+}
+
+#[test]
+fn menu_paste_goes_where_you_right_clicked() {
+    let mut h = Harness::new("menu-paste");
+    h.key(Key::R);
+    h.drag(pos2(100.0, 100.0), pos2(140.0, 140.0));
+    h.cmd(Key::A);
+    h.frame(vec![Event::Copy]);
+    h.right_click(pos2(500.0, 400.0));
+    h.app.run_menu(MenuItem::Paste);
+    let ObjectKind::Shape { a, b, .. } = h.kinds()[1] else {
+        panic!()
+    };
+    assert!(((a + b.to_vec2()) / 2.0).distance(pos2(500.0, 400.0)) < 0.01);
 }
 
 #[test]
