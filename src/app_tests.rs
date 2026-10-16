@@ -449,6 +449,23 @@ fn tabs_open_close_and_confirm() {
 }
 
 #[test]
+fn keys_dont_reach_the_board_behind_a_dialog() {
+    let mut h = Harness::new("dialog");
+    h.drag(pos2(100.0, 100.0), pos2(200.0, 100.0));
+    h.cmd(Key::A);
+    h.key_with(Key::Questionmark, Modifiers::SHIFT);
+    assert!(h.app.show_help);
+    h.key(Key::Delete);
+    h.key(Key::R);
+    assert_eq!(h.kinds().len(), 1);
+    assert_eq!(h.app.tool, Tool::Select);
+    h.key(Key::Escape);
+    assert!(!h.app.show_help);
+    h.key(Key::Delete);
+    assert!(h.kinds().is_empty());
+}
+
+#[test]
 fn style_bar_edits_selection() {
     let mut h = Harness::new("style");
     h.key(Key::R);

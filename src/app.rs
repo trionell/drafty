@@ -413,6 +413,8 @@ impl App {
         if ctx.egui_wants_keyboard_input() {
             return;
         }
+        // A dialog is up: the board behind it shouldn't react to keys.
+        let dialog = self.show_help || self.confirm_close.is_some();
         let events = ctx.input(|i| i.events.clone());
         for ev in events {
             match ev {
@@ -427,10 +429,13 @@ impl App {
                         .iter()
                         .find(|s| s.matches(key, modifiers))
                         .map(|s| s.action);
-                    if let Some(a) = action {
-                        self.run(a);
+                    match action {
+                        Some(a @ (Action::Help | Action::Escape)) => self.run(a),
+                        Some(a) if !dialog => self.run(a),
+                        _ => {}
                     }
                 }
+                _ if dialog => {}
                 Event::Copy => self.copy_objects(false),
                 Event::Cut => self.copy_objects(true),
                 Event::Paste(text) => self.paste_text(text),
