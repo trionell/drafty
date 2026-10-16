@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Drafty
+GenericName=Whiteboard
+Comment=Sketch quick diagrams and annotate screenshots
+Exec=drafty %F
+Icon=drafty
+Terminal=false
+Categories=Graphics;2DGraphics;
+Keywords=draw;sketch;whiteboard;annotate;screenshot;paint;
+MimeType=application/x-drafty;image/png;image/jpeg;
+StartupWMClass=drafty
