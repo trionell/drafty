@@ -11,7 +11,7 @@ use egui::{
 use crate::clipboard::{Clipboard, ObjectClip};
 use crate::doc::{Document, Edit, ImageData, ImageId, Object, ObjectId, ObjectKind, io};
 use crate::render::export::{self, ExportOptions};
-use crate::render::screen::{self, Renderer, TextureCache};
+use crate::render::screen::{self, RenderCache, Renderer};
 use crate::session::{self, Session};
 use crate::tools::eraser::{self, EraserTool};
 use crate::tools::pen::PenTool;
@@ -199,7 +199,7 @@ pub struct App {
     eraser: EraserTool,
     select: SelectTool,
     pub text: Option<TextEditState>,
-    textures: TextureCache,
+    render_cache: RenderCache,
     clipboard: Clipboard,
     object_clip: Option<ObjectClip>,
     pub show_grid: bool,
@@ -244,7 +244,7 @@ impl App {
             eraser: EraserTool::default(),
             select: SelectTool::default(),
             text: None,
-            textures: TextureCache::default(),
+            render_cache: RenderCache::default(),
             clipboard,
             object_clip: None,
             show_grid: grid,
@@ -353,7 +353,7 @@ impl App {
             self.active = self.active.saturating_sub(1).min(self.docs.len() - 1);
         }
         let keep: HashSet<ImageId> = self.docs.iter().flat_map(|d| d.images.keys().copied()).collect();
-        self.textures.retain_images(&keep);
+        self.render_cache.retain_images(&keep);
         // Write now so the closed tab's autosave file goes away too.
         self.session.save(&mut self.docs, self.active, self.show_grid);
     }
@@ -791,6 +791,13 @@ impl App {
         let center = if new_tab { Pos2::ZERO + size * 0.5 } else { at.unwrap_or_else(|| self.paste_point()) };
         let doc = self.doc_mut();
         doc.add_image(id, data);
+        // Encode pasted pixels in the background, so the next autosave doesn't stall the
+        // UI on a 4K PNG. A no-op for images that came from files.
+        if let Some(d) = doc.images.get(&id).cloned() {
+            std::thread::spawn(move || {
+                d.encoded();
+            });
+        }
         let rect = Rect::from_center_size(center, size);
         let ids = doc.apply(Edit::Add(vec![ObjectKind::Image { image: id, rect }]));
         if new_tab {
@@ -1094,7 +1101,7 @@ impl App {
             }
         let dimmed = if self.tool == Tool::Eraser { self.eraser.hits.clone() } else { HashSet::new() };
 
-        let mut r = Renderer { ctx, painter: &painter, cam: doc.camera, textures: &mut self.textures };
+        let mut r = Renderer { ctx, painter: &painter, cam: doc.camera, cache: &mut self.render_cache };
         r.draw_document(doc, &hidden, &dimmed);
 
         let preview = match self.tool {
@@ -1105,7 +1112,7 @@ impl App {
         if let Some(kind) = preview {
             r.draw(doc, &kind, None, 1.0);
         }
-        self.textures.end_frame();
+        self.render_cache.end_frame();
 
         if self.tool == Tool::Select {
             self.select.draw(&painter, doc, &doc.camera);

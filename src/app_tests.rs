@@ -55,6 +55,9 @@ impl Harness {
         };
         let app = &mut self.app;
         let mut out = self.ctx.run_ui(raw, |ui| app.show(ui));
+        // Tessellate like eframe does, so the frame does the full CPU work.
+        let shapes = std::mem::take(&mut out.shapes);
+        let _ = self.ctx.tessellate(shapes, out.pixels_per_point);
         // No GPU here; drop the texture uploads.
         out.textures_delta.clear();
     }
@@ -460,4 +463,41 @@ fn session_survives_restart() {
     let ObjectKind::Text { text, extent, .. } = &h.app.docs[1].objects[0].kind else { panic!() };
     assert_eq!(text, "unsaved text");
     assert!(extent.x > 0.0, "restored text gets measured");
+}
+
+/// CPU time per frame while drawing on a full board, tessellation included. Run with
+/// `cargo test --release -- --ignored frame_time --nocapture`.
+#[test]
+#[ignore]
+fn frame_time_on_big_boards() {
+    for count in [1000, 5000] {
+        let per_frame = frame_time(count);
+        println!("frame time with {count} objects: {per_frame:?}");
+    }
+}
+
+fn frame_time(count: usize) -> std::time::Duration {
+    use crate::doc::{Edit, Fill, Style};
+    let mut h = Harness::new(&format!("bench{count}"));
+    let style = Style { color: egui::Color32::BLACK, width: 3.0, fill: Fill::None };
+    let kinds = (0..count)
+        .map(|i| {
+            // Short wiggly 30-point strokes packed onto the visible area.
+            let x = (i % 100) as f32 * 11.0;
+            let y = (i / 100) as f32 * (650.0 / (count / 100) as f32) + 10.0;
+            let points = (0..30).map(|k| pos2(x + k as f32 * 0.4, y + (k as f32 * 0.7).sin() * 4.0)).collect();
+            ObjectKind::Stroke { points, style, highlighter: false }
+        })
+        .collect();
+    h.app.doc_mut().apply(Edit::Add(kinds));
+    // Draw while the board is full, like a pen stroke in progress.
+    let p = h.screen(pos2(300.0, 300.0));
+    h.frame(vec![Event::PointerMoved(p)]);
+    h.frame(vec![h.button(p, true)]);
+    let n = 60;
+    let start = std::time::Instant::now();
+    for i in 0..n {
+        h.frame(vec![Event::PointerMoved(p + vec2(i as f32, 0.0))]);
+    }
+    start.elapsed() / n
 }

@@ -4,7 +4,8 @@ pub mod io;
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use egui::{Color32, Pos2, Rect, Vec2};
 
@@ -92,13 +93,16 @@ pub struct Object {
     pub kind: ObjectKind,
 }
 
-/// Pixels plus their encoded form. Either side gets filled lazily: pasted images start as
-/// RGBA and get PNG-encoded on first save, loaded images start encoded and get decoded on
-/// first draw.
+/// An image's encoded bytes (PNG/JPEG) and, while needed, its decoded pixels.
+///
+/// Decoded pixels are big (33 MB for a 4K screenshot), so they're only kept while
+/// something needs them: a pasted image keeps them until it has been both encoded for
+/// saving and uploaded to the GPU. After that, `rgba()` decodes again on demand.
 pub struct ImageData {
     pub size: [u32; 2],
     encoded: OnceLock<Arc<Vec<u8>>>,
-    rgba: OnceLock<Arc<Vec<u8>>>,
+    rgba: Mutex<Option<Arc<Vec<u8>>>>,
+    uploaded: AtomicBool,
 }
 
 impl std::fmt::Debug for ImageData {
@@ -109,30 +113,25 @@ impl std::fmt::Debug for ImageData {
 
 impl ImageData {
     pub fn from_rgba(size: [u32; 2], rgba: Vec<u8>) -> (ImageId, Self) {
-        let id = hash_pixels(size, &rgba);
+        let id = hash_bytes(b"rgba", &rgba, size);
         let data = Self {
             size,
             encoded: OnceLock::new(),
-            rgba: OnceLock::from(Arc::new(rgba)),
+            rgba: Mutex::new(Some(Arc::new(rgba))),
+            uploaded: AtomicBool::new(false),
         };
         (id, data)
     }
 
-    /// Decodes once to validate the bytes and get the size.
+    /// Reads only the header, so opening a big image is instant. Decoding waits until
+    /// the image is first drawn.
     pub fn from_encoded(bytes: Vec<u8>) -> Result<(ImageId, Self), String> {
-        let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?.into_rgba8();
-        let size = [img.width(), img.height()];
-        let rgba = img.into_raw();
-        let id = hash_pixels(size, &rgba);
-        let data = Self {
-            size,
-            encoded: OnceLock::from(Arc::new(bytes)),
-            rgba: OnceLock::from(Arc::new(rgba)),
-        };
+        let data = Self::from_encoded_lazy(bytes)?;
+        let id = hash_bytes(b"file", data.encoded.get().expect("just set"), data.size);
         Ok((id, data))
     }
 
-    /// For loading from a file, where the id is already known. Decoding waits until first use.
+    /// For loading from a `.drafty` file, where the id is already known.
     pub fn from_encoded_lazy(bytes: Vec<u8>) -> Result<Self, String> {
         let dims = image::ImageReader::new(std::io::Cursor::new(&bytes))
             .with_guessed_format()
@@ -142,29 +141,35 @@ impl ImageData {
         Ok(Self {
             size: [dims.0, dims.1],
             encoded: OnceLock::from(Arc::new(bytes)),
-            rgba: OnceLock::new(),
+            rgba: Mutex::new(None),
+            uploaded: AtomicBool::new(false),
         })
     }
 
+    fn pixels(&self) -> std::sync::MutexGuard<'_, Option<Arc<Vec<u8>>>> {
+        self.rgba.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// RGBA pixels with straight alpha. Decodes if they were released.
     pub fn rgba(&self) -> Arc<Vec<u8>> {
-        self.rgba
-            .get_or_init(|| {
-                let bytes = self.encoded.get().expect("image has neither pixels nor bytes");
-                match image::load_from_memory(bytes) {
-                    Ok(img) => Arc::new(img.into_rgba8().into_raw()),
-                    Err(e) => {
-                        eprintln!("drafty: failed to decode image: {e}");
-                        Arc::new(vec![255; (self.size[0] * self.size[1] * 4) as usize])
-                    }
-                }
-            })
-            .clone()
+        if let Some(p) = self.pixels().as_ref() {
+            return p.clone();
+        }
+        let bytes = self.encoded.get().expect("image has neither pixels nor bytes");
+        match image::load_from_memory(bytes) {
+            Ok(img) => Arc::new(img.into_rgba8().into_raw()),
+            Err(e) => {
+                eprintln!("drafty: failed to decode image: {e}");
+                Arc::new(vec![255; (self.size[0] * self.size[1] * 4) as usize])
+            }
+        }
     }
 
     pub fn encoded(&self) -> Arc<Vec<u8>> {
-        self.encoded
+        let bytes = self
+            .encoded
             .get_or_init(|| {
-                let rgba = self.rgba.get().expect("image has neither pixels nor bytes");
+                let rgba = self.pixels().clone().expect("image has neither pixels nor bytes");
                 let mut out = Vec::new();
                 let encoder = image::codecs::png::PngEncoder::new_with_quality(
                     &mut out,
@@ -173,7 +178,7 @@ impl ImageData {
                 );
                 use image::ImageEncoder as _;
                 if let Err(e) = encoder.write_image(
-                    rgba,
+                    &rgba,
                     self.size[0],
                     self.size[1],
                     image::ExtendedColorType::Rgba8,
@@ -182,15 +187,35 @@ impl ImageData {
                 }
                 Arc::new(out)
             })
-            .clone()
+            .clone();
+        self.release_if_done();
+        bytes
+    }
+
+    /// The renderer calls this once the pixels are on the GPU.
+    pub fn mark_uploaded(&self) {
+        self.uploaded.store(true, Ordering::Relaxed);
+        self.release_if_done();
+    }
+
+    fn release_if_done(&self) {
+        if self.uploaded.load(Ordering::Relaxed) && self.encoded.get().is_some() {
+            *self.pixels() = None;
+        }
+    }
+
+    #[cfg(test)]
+    pub fn has_pixels(&self) -> bool {
+        self.pixels().is_some()
     }
 }
 
-fn hash_pixels(size: [u32; 2], rgba: &[u8]) -> ImageId {
+fn hash_bytes(kind: &[u8], bytes: &[u8], size: [u32; 2]) -> ImageId {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
+    kind.hash(&mut h);
     size.hash(&mut h);
-    rgba.hash(&mut h);
+    bytes.hash(&mut h);
     ImageId(h.finish())
 }
 
@@ -447,8 +472,8 @@ fn is_noop(edit: &Edit) -> bool {
 }
 
 fn new_session_id() -> String {
+    use std::sync::atomic::AtomicU64;
     use std::time::{SystemTime, UNIX_EPOCH};
-    use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -509,6 +534,17 @@ mod tests {
         doc.selection.insert(ids[0]);
         doc.undo();
         assert!(doc.selection.is_empty());
+    }
+
+    #[test]
+    fn pasted_pixels_released_after_encode_and_upload() {
+        let (_, data) = ImageData::from_rgba([1, 1], vec![1, 2, 3, 255]);
+        data.mark_uploaded();
+        assert!(data.has_pixels(), "not saved yet, keep the pixels");
+        let png = data.encoded();
+        assert!(!data.has_pixels());
+        assert_eq!(&*data.rgba(), &[1, 2, 3, 255], "decodes again from the PNG");
+        assert!(!png.is_empty());
     }
 
     #[test]

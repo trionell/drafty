@@ -43,9 +43,11 @@ impl PenTool {
         }
         self.active = false;
         let raw = std::mem::take(&mut self.points);
-        // Smooth on release so the line doesn't lag behind the cursor while drawing.
+        // Smooth on release so the line doesn't lag behind the cursor while drawing. Smoothing
+        // quadruples the points; simplifying afterwards drops the ones a viewer can't see,
+        // which keeps big boards fast to draw.
         let points = if raw.len() > 2 {
-            geom::smooth(&geom::simplify(&raw, 0.3 * input.px), 2)
+            geom::simplify(&geom::smooth(&raw, 2), 0.15 * input.px)
         } else {
             raw
         };
