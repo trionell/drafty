@@ -25,7 +25,11 @@ impl ShapeTool {
             return None;
         }
         let start = self.start?;
-        self.end = if input.shift { geom::constrain(shape, start, input.pos) } else { input.pos };
+        self.end = if input.shift {
+            geom::constrain(shape, start, input.pos)
+        } else {
+            input.pos
+        };
         if !input.released {
             return None;
         }
@@ -38,7 +42,12 @@ impl ShapeTool {
     }
 
     fn kind(&self, start: Pos2, shape: ShapeKind, settings: &Settings) -> ObjectKind {
-        ObjectKind::Shape { shape, a: start, b: self.end, style: settings.shape_style() }
+        ObjectKind::Shape {
+            shape,
+            a: start,
+            b: self.end,
+            style: settings.shape_style(),
+        }
     }
 
     pub fn preview(&self, shape: ShapeKind, settings: &Settings) -> Option<ObjectKind> {

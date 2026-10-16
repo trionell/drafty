@@ -72,7 +72,9 @@ impl Tool {
             Tool::Ellipse => Some(ShapeKind::Ellipse),
             Tool::Triangle => Some(ShapeKind::Triangle),
             Tool::Line => Some(ShapeKind::Line),
-            Tool::Arrow => Some(ShapeKind::Arrow { double: arrow_double }),
+            Tool::Arrow => Some(ShapeKind::Arrow {
+                double: arrow_double,
+            }),
             _ => None,
         }
     }
@@ -123,19 +125,35 @@ impl Default for Settings {
 
 impl Settings {
     pub fn pen_style(&self) -> Style {
-        Style { color: self.color, width: self.pen_width, fill: Fill::None }
+        Style {
+            color: self.color,
+            width: self.pen_width,
+            fill: Fill::None,
+        }
     }
 
     pub fn highlight_style(&self) -> Style {
-        Style { color: self.highlight_color, width: self.highlight_width, fill: Fill::None }
+        Style {
+            color: self.highlight_color,
+            width: self.highlight_width,
+            fill: Fill::None,
+        }
     }
 
     pub fn shape_style(&self) -> Style {
-        Style { color: self.color, width: self.shape_width, fill: self.fill }
+        Style {
+            color: self.color,
+            width: self.shape_width,
+            fill: self.fill,
+        }
     }
 
     pub fn color_for(&self, tool: Tool) -> Color32 {
-        if tool == Tool::Highlighter { self.highlight_color } else { self.color }
+        if tool == Tool::Highlighter {
+            self.highlight_color
+        } else {
+            self.color
+        }
     }
 
     pub fn set_color_for(&mut self, tool: Tool, c: Color32) {

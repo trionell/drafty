@@ -86,9 +86,19 @@ impl RenderCache {
 /// their own texture (images, text, highlighter).
 fn vector_shapes(cam: &Camera, kind: &ObjectKind, opacity: f32, out: &mut Vec<Shape>) -> bool {
     let zoom = cam.zoom;
-    let fade = |c: Color32| if opacity < 1.0 { c.gamma_multiply(opacity) } else { c };
+    let fade = |c: Color32| {
+        if opacity < 1.0 {
+            c.gamma_multiply(opacity)
+        } else {
+            c
+        }
+    };
     match kind {
-        ObjectKind::Stroke { points, style, highlighter: false } => {
+        ObjectKind::Stroke {
+            points,
+            style,
+            highlighter: false,
+        } => {
             let color = fade(style.color);
             let w = style.width * zoom;
             let pts: Vec<Pos2> = points.iter().map(|p| cam.to_screen(*p)).collect();
@@ -129,7 +139,10 @@ fn vector_shapes(cam: &Camera, kind: &ObjectKind, opacity: f32, out: &mut Vec<Sh
                 }
                 ShapeKind::Arrow { double } => {
                     let (start, end, heads) = geom::arrow_parts(*a, *b, style.width, *double);
-                    out.push(Shape::line_segment([cam.to_screen(start), cam.to_screen(end)], stroke));
+                    out.push(Shape::line_segment(
+                        [cam.to_screen(start), cam.to_screen(end)],
+                        stroke,
+                    ));
                     if !double {
                         out.push(Shape::circle_filled(sa, stroke.width * 0.5, color));
                     }
@@ -153,7 +166,12 @@ pub struct Renderer<'a> {
 }
 
 impl Renderer<'_> {
-    pub fn draw_document(&mut self, doc: &Document, hidden: &HashSet<ObjectId>, dimmed: &HashSet<ObjectId>) {
+    pub fn draw_document(
+        &mut self,
+        doc: &Document,
+        hidden: &HashSet<ObjectId>,
+        dimmed: &HashSet<ObjectId>,
+    ) {
         let sorted = |s: &HashSet<ObjectId>| {
             let mut v: Vec<_> = s.iter().copied().collect();
             v.sort();
@@ -189,13 +207,19 @@ impl Renderer<'_> {
         self.cache.board = Some((key, runs));
     }
 
-    fn build_runs(&mut self, doc: &Document, hidden: &HashSet<ObjectId>, dimmed: &HashSet<ObjectId>) -> Vec<Run> {
+    fn build_runs(
+        &mut self,
+        doc: &Document,
+        hidden: &HashSet<ObjectId>,
+        dimmed: &HashSet<ObjectId>,
+    ) -> Vec<Run> {
         let clip = self.painter.clip_rect();
         let options = self.ctx.tessellation_options(|o| *o);
         // No prepared discs: they live in the font atlas, which egui doesn't expose here.
         // Circles get tessellated as paths instead.
         let atlas_size = self.ctx.fonts(|f| f.font_image_size());
-        let mut tess = Tessellator::new(self.ctx.pixels_per_point(), options, atlas_size, Vec::new());
+        let mut tess =
+            Tessellator::new(self.ctx.pixels_per_point(), options, atlas_size, Vec::new());
         tess.set_clip_rect(clip);
 
         let mut runs = Vec::new();
@@ -214,7 +238,11 @@ impl Renderer<'_> {
             if hidden.contains(&obj.id) {
                 continue;
             }
-            if !self.cam.rect_to_screen(geom::bounds(&obj.kind)).intersects(clip) {
+            if !self
+                .cam
+                .rect_to_screen(geom::bounds(&obj.kind))
+                .intersects(clip)
+            {
                 continue;
             }
             let opacity = if dimmed.contains(&obj.id) { 0.25 } else { 1.0 };
@@ -229,26 +257,46 @@ impl Renderer<'_> {
 
     /// Draw one object. `cached` is the committed object, used to key the highlighter
     /// texture cache. Previews pass `None` and get rasterized fresh each frame.
-    pub fn draw(&mut self, doc: &Document, kind: &ObjectKind, cached: Option<&Arc<Object>>, opacity: f32) {
+    pub fn draw(
+        &mut self,
+        doc: &Document,
+        kind: &ObjectKind,
+        cached: Option<&Arc<Object>>,
+        opacity: f32,
+    ) {
         let mut shapes = Vec::new();
         if vector_shapes(&self.cam, kind, opacity, &mut shapes) {
             self.painter.extend(shapes);
             return;
         }
-        let fade = |c: Color32| if opacity < 1.0 { c.gamma_multiply(opacity) } else { c };
+        let fade = |c: Color32| {
+            if opacity < 1.0 {
+                c.gamma_multiply(opacity)
+            } else {
+                c
+            }
+        };
         match kind {
             ObjectKind::Stroke { points, style, .. } => {
                 self.draw_highlight(points, style.width, style.color, cached, opacity);
             }
-            ObjectKind::Text { pos, text, size, color, .. } => {
+            ObjectKind::Text {
+                pos,
+                text,
+                size,
+                color,
+                ..
+            } => {
                 let galley = layout_text(self.ctx, text, *size * self.cam.zoom, fade(*color));
-                self.painter.galley(self.cam.to_screen(*pos), galley, fade(*color));
+                self.painter
+                    .galley(self.cam.to_screen(*pos), galley, fade(*color));
             }
             ObjectKind::Image { image, rect } => {
                 if let Some(tex) = self.cache.image(self.ctx, doc, *image) {
                     let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
                     let tint = Color32::WHITE.gamma_multiply(opacity);
-                    self.painter.image(tex.id(), self.cam.rect_to_screen(*rect), uv, tint);
+                    self.painter
+                        .image(tex.id(), self.cam.rect_to_screen(*rect), uv, tint);
                 }
             }
             ObjectKind::Shape { .. } => unreachable!("shapes are vector shapes"),
@@ -282,10 +330,13 @@ impl Renderer<'_> {
         if let Some(obj) = cached {
             self.cache.used_highlights.insert(obj.id);
             if let Some(h) = self.cache.highlights.get(&obj.id)
-                && Arc::ptr_eq(&h.source, obj) && h.scale == scale {
-                    self.painter.image(h.texture.id(), self.cam.rect_to_screen(h.rect), uv, tint);
-                    return;
-                }
+                && Arc::ptr_eq(&h.source, obj)
+                && h.scale == scale
+            {
+                self.painter
+                    .image(h.texture.id(), self.cam.rect_to_screen(h.rect), uv, tint);
+                return;
+            }
         }
 
         let Some((pixmap, rect)) = rasterize_highlight(points, width, color, scale) else {
@@ -293,12 +344,20 @@ impl Renderer<'_> {
         };
         let size = [pixmap.width() as usize, pixmap.height() as usize];
         let image = ColorImage::from_rgba_premultiplied(size, pixmap.data());
-        let texture = self.ctx.load_texture("highlight", image, TextureOptions::LINEAR);
-        self.painter.image(texture.id(), self.cam.rect_to_screen(rect), uv, tint);
+        let texture = self
+            .ctx
+            .load_texture("highlight", image, TextureOptions::LINEAR);
+        self.painter
+            .image(texture.id(), self.cam.rect_to_screen(rect), uv, tint);
         if let Some(obj) = cached {
             self.cache.highlights.insert(
                 obj.id,
-                HighlightTexture { source: obj.clone(), scale, rect, texture },
+                HighlightTexture {
+                    source: obj.clone(),
+                    scale,
+                    rect,
+                    texture,
+                },
             );
         }
     }

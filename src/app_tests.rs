@@ -32,8 +32,20 @@ impl Harness {
 
     fn with_dir(dir: PathBuf) -> Self {
         let ctx = Context::default();
-        let app = App::new(&ctx, Vec::new(), Session::at(dir.clone()), Clipboard::disabled());
-        let mut h = Self { ctx, app, time: 0.0, mods: Modifiers::NONE, sent_mods: Modifiers::NONE, dir };
+        let app = App::new(
+            &ctx,
+            Vec::new(),
+            Session::at(dir.clone()),
+            Clipboard::disabled(),
+        );
+        let mut h = Self {
+            ctx,
+            app,
+            time: 0.0,
+            mods: Modifiers::NONE,
+            sent_mods: Modifiers::NONE,
+            dir,
+        };
         h.frame(vec![]);
         h.frame(vec![]);
         h
@@ -68,7 +80,12 @@ impl Harness {
     }
 
     fn button(&self, pos: Pos2, pressed: bool) -> Event {
-        Event::PointerButton { pos, button: PointerButton::Primary, pressed, modifiers: self.mods }
+        Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: self.mods,
+        }
     }
 
     /// Drag between two board points.
@@ -103,7 +120,13 @@ impl Harness {
     }
 
     fn key_with(&mut self, key: Key, mods: Modifiers) {
-        let ev = |pressed| Event::Key { key, physical_key: None, pressed, repeat: false, modifiers: mods };
+        let ev = |pressed| Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: mods,
+        };
         let old = self.mods;
         self.mods = mods;
         self.frame(vec![ev(true)]);
@@ -125,7 +148,12 @@ impl Harness {
     }
 
     fn kinds(&self) -> Vec<ObjectKind> {
-        self.app.doc().objects.iter().map(|o| o.kind.clone()).collect()
+        self.app
+            .doc()
+            .objects
+            .iter()
+            .map(|o| o.kind.clone())
+            .collect()
     }
 }
 
@@ -142,7 +170,14 @@ fn pen_draws_a_stroke() {
     h.drag(pos2(100.0, 100.0), pos2(300.0, 200.0));
     let kinds = h.kinds();
     assert_eq!(kinds.len(), 1);
-    let ObjectKind::Stroke { points, highlighter, .. } = &kinds[0] else { panic!("{kinds:?}") };
+    let ObjectKind::Stroke {
+        points,
+        highlighter,
+        ..
+    } = &kinds[0]
+    else {
+        panic!("{kinds:?}")
+    };
     assert!(!highlighter);
     assert!(points.len() >= 2);
     assert!(points[0].distance(pos2(100.0, 100.0)) < 1.0);
@@ -162,20 +197,42 @@ fn shapes_and_shift_constraint() {
     h.key(Key::R);
     assert_eq!(h.app.tool, Tool::Rect);
     h.drag(pos2(100.0, 100.0), pos2(200.0, 150.0));
-    let ObjectKind::Shape { shape: ShapeKind::Rect, a, b, .. } = h.kinds()[0] else { panic!() };
+    let ObjectKind::Shape {
+        shape: ShapeKind::Rect,
+        a,
+        b,
+        ..
+    } = h.kinds()[0]
+    else {
+        panic!()
+    };
     assert!(a.distance(pos2(100.0, 100.0)) < 1.0 && b.distance(pos2(200.0, 150.0)) < 1.0);
 
     h.key(Key::O);
     h.mods = Modifiers::SHIFT;
     h.drag(pos2(300.0, 100.0), pos2(400.0, 130.0));
     h.mods = Modifiers::NONE;
-    let ObjectKind::Shape { shape: ShapeKind::Ellipse, a, b, .. } = h.kinds()[1] else { panic!() };
+    let ObjectKind::Shape {
+        shape: ShapeKind::Ellipse,
+        a,
+        b,
+        ..
+    } = h.kinds()[1]
+    else {
+        panic!()
+    };
     let d = b - a;
     assert!((d.x - d.y).abs() < 1.0, "shift should make a circle: {d:?}");
 
     h.key(Key::A);
     h.drag(pos2(100.0, 300.0), pos2(250.0, 320.0));
-    assert!(matches!(h.kinds()[2], ObjectKind::Shape { shape: ShapeKind::Arrow { double: false }, .. }));
+    assert!(matches!(
+        h.kinds()[2],
+        ObjectKind::Shape {
+            shape: ShapeKind::Arrow { double: false },
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -210,12 +267,19 @@ fn select_move_and_undo() {
     h.key(Key::V);
     // Grab the left edge, drag 50 right.
     h.drag(pos2(100.0, 150.0), pos2(150.0, 150.0));
-    let ObjectKind::Shape { a, .. } = h.kinds()[0] else { panic!() };
+    let ObjectKind::Shape { a, .. } = h.kinds()[0] else {
+        panic!()
+    };
     assert!(a.distance(pos2(150.0, 100.0)) < 1.0, "{a:?}");
     assert_eq!(h.app.doc().selection.len(), 1);
     h.cmd(Key::Z);
-    let ObjectKind::Shape { a, .. } = h.kinds()[0] else { panic!() };
-    assert!(a.distance(pos2(100.0, 100.0)) < 1.0, "one undo restores the position: {a:?}");
+    let ObjectKind::Shape { a, .. } = h.kinds()[0] else {
+        panic!()
+    };
+    assert!(
+        a.distance(pos2(100.0, 100.0)) < 1.0,
+        "one undo restores the position: {a:?}"
+    );
 }
 
 #[test]
@@ -228,7 +292,9 @@ fn resize_handle() {
     // Bottom-right handle sits at the stroke-expanded corner.
     let w = h.app.settings.shape_width * 0.5;
     h.drag(pos2(200.0 + w, 200.0 + w), pos2(300.0 + w, 300.0 + w));
-    let ObjectKind::Shape { a, b, .. } = h.kinds()[0] else { panic!() };
+    let ObjectKind::Shape { a, b, .. } = h.kinds()[0] else {
+        panic!()
+    };
     assert!(a.distance(pos2(100.0, 100.0)) < 0.01, "{a:?}");
     assert!(b.distance(pos2(300.0, 300.0)) < 0.01, "{b:?}");
 }
@@ -279,7 +345,12 @@ fn text_tool_types_and_edits() {
     h.frame(vec![]);
     assert!(h.app.text.is_none());
     let kinds = h.kinds();
-    let ObjectKind::Text { text, extent, pos, .. } = &kinds[0] else { panic!("{kinds:?}") };
+    let ObjectKind::Text {
+        text, extent, pos, ..
+    } = &kinds[0]
+    else {
+        panic!("{kinds:?}")
+    };
     assert_eq!(text, "Hello pv");
     assert!(extent.x > 20.0 && extent.y > 10.0, "{extent:?}");
     assert_eq!(h.app.tool, Tool::Text);
@@ -288,13 +359,21 @@ fn text_tool_types_and_edits() {
     h.key(Key::V);
     h.double_click(mid);
     assert!(h.app.text.is_some(), "double-click should edit the text");
-    h.frame(vec![Event::Key { key: Key::End, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE }]);
+    h.frame(vec![Event::Key {
+        key: Key::End,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: Modifiers::NONE,
+    }]);
     h.frame(vec![Event::Text("!".into())]);
     // Clicking the board finishes editing.
     h.click(pos2(800.0, 600.0));
     let kinds = h.kinds();
     assert_eq!(kinds.len(), 1);
-    let ObjectKind::Text { text, .. } = &kinds[0] else { panic!() };
+    let ObjectKind::Text { text, .. } = &kinds[0] else {
+        panic!()
+    };
     assert_eq!(text, "Hello pv!");
 }
 
@@ -315,7 +394,9 @@ fn paste_text_and_image() {
     assert!(matches!(&h.kinds()[0], ObjectKind::Text { text, .. } if text == "from clipboard"));
     let img = egui::ColorImage::new([40, 20], vec![egui::Color32::RED; 800]);
     h.frame(vec![Event::PasteImage(std::sync::Arc::new(img))]);
-    let ObjectKind::Image { rect, .. } = h.kinds()[1] else { panic!() };
+    let ObjectKind::Image { rect, .. } = h.kinds()[1] else {
+        panic!()
+    };
     assert_eq!(rect.size(), vec2(40.0, 20.0));
     assert_eq!(h.app.tool, Tool::Select);
     assert_eq!(h.app.doc().images.len(), 1);
@@ -376,13 +457,17 @@ fn style_bar_edits_selection() {
     h.click(pos2(100.0, 150.0));
     h.key(Key::Num7);
     h.key(Key::CloseBracket);
-    let ObjectKind::Shape { style, .. } = h.kinds()[0] else { panic!() };
+    let ObjectKind::Shape { style, .. } = h.kinds()[0] else {
+        panic!()
+    };
     assert_eq!(style.color, crate::tools::PALETTE[6]);
     assert!(style.width > 4.0);
     // Two style edits, two undo steps.
     h.cmd(Key::Z);
     h.cmd(Key::Z);
-    let ObjectKind::Shape { style, .. } = h.kinds()[0] else { panic!() };
+    let ObjectKind::Shape { style, .. } = h.kinds()[0] else {
+        panic!()
+    };
     assert_eq!(style.color, crate::tools::PALETTE[2]);
 }
 
@@ -398,10 +483,15 @@ fn zoom_and_pan_keep_drawing_in_board_space() {
     let start = cam.to_board(pos2(500.0, 400.0));
     let end = start + vec2(100.0, 0.0);
     h.drag(start, end);
-    let ObjectKind::Stroke { points, style, .. } = &h.kinds()[0] else { panic!() };
+    let ObjectKind::Stroke { points, style, .. } = &h.kinds()[0] else {
+        panic!()
+    };
     assert!(points[0].distance(start) < 1.0);
     assert!(points.last().unwrap().distance(end) < 1.0);
-    assert_eq!(style.width, 4.0, "width is in board units, not screen units");
+    assert_eq!(
+        style.width, 4.0,
+        "width is in board units, not screen units"
+    );
     h.cmd(Key::Minus);
     assert_eq!(h.ctx.zoom_factor(), 1.0, "the UI itself must not zoom");
     assert!((h.app.doc().camera.zoom - 1.25).abs() < 1e-3);
@@ -428,7 +518,12 @@ fn scroll_pans_and_ctrl_scroll_zooms() {
     }
     let after = h.app.doc().camera;
     assert_eq!(after.zoom, before.zoom);
-    assert!(after.offset.y < before.offset.y - 10.0, "scroll pans: {:?} -> {:?}", before.offset, after.offset);
+    assert!(
+        after.offset.y < before.offset.y - 10.0,
+        "scroll pans: {:?} -> {:?}",
+        before.offset,
+        after.offset
+    );
 
     let board = after.to_board(p);
     h.mods = Modifiers::COMMAND;
@@ -439,7 +534,10 @@ fn scroll_pans_and_ctrl_scroll_zooms() {
     }
     let cam = h.app.doc().camera;
     assert!(cam.zoom > 1.0, "ctrl+scroll zooms in: {}", cam.zoom);
-    assert!((cam.to_screen(board) - p).length() < 0.5, "zoom keeps the point under the cursor");
+    assert!(
+        (cam.to_screen(board) - p).length() < 0.5,
+        "zoom keeps the point under the cursor"
+    );
 }
 
 #[test]
@@ -460,7 +558,9 @@ fn session_survives_restart() {
     assert_eq!(h.app.docs.len(), 2);
     assert_eq!(h.app.active, 1);
     assert_eq!(h.app.docs[0].objects.len(), 1);
-    let ObjectKind::Text { text, extent, .. } = &h.app.docs[1].objects[0].kind else { panic!() };
+    let ObjectKind::Text { text, extent, .. } = &h.app.docs[1].objects[0].kind else {
+        panic!()
+    };
     assert_eq!(text, "unsaved text");
     assert!(extent.x > 0.0, "restored text gets measured");
 }
@@ -479,14 +579,24 @@ fn frame_time_on_big_boards() {
 fn frame_time(count: usize) -> std::time::Duration {
     use crate::doc::{Edit, Fill, Style};
     let mut h = Harness::new(&format!("bench{count}"));
-    let style = Style { color: egui::Color32::BLACK, width: 3.0, fill: Fill::None };
+    let style = Style {
+        color: egui::Color32::BLACK,
+        width: 3.0,
+        fill: Fill::None,
+    };
     let kinds = (0..count)
         .map(|i| {
             // Short wiggly 30-point strokes packed onto the visible area.
             let x = (i % 100) as f32 * 11.0;
             let y = (i / 100) as f32 * (650.0 / (count / 100) as f32) + 10.0;
-            let points = (0..30).map(|k| pos2(x + k as f32 * 0.4, y + (k as f32 * 0.7).sin() * 4.0)).collect();
-            ObjectKind::Stroke { points, style, highlighter: false }
+            let points = (0..30)
+                .map(|k| pos2(x + k as f32 * 0.4, y + (k as f32 * 0.7).sin() * 4.0))
+                .collect();
+            ObjectKind::Stroke {
+                points,
+                style,
+                highlighter: false,
+            }
         })
         .collect();
     h.app.doc_mut().apply(Edit::Add(kinds));

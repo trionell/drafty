@@ -133,7 +133,13 @@ pub fn hit(kind: &ObjectKind, p: Pos2, tolerance: f32) -> bool {
                     if filled && r.contains(p) {
                         return true;
                     }
-                    let c = [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom(), r.left_top()];
+                    let c = [
+                        r.left_top(),
+                        r.right_top(),
+                        r.right_bottom(),
+                        r.left_bottom(),
+                        r.left_top(),
+                    ];
                     dist_to_polyline(p, &c) <= reach
                 }
                 ShapeKind::Ellipse => {
@@ -262,8 +268,16 @@ pub fn translate(kind: &ObjectKind, d: Vec2) -> ObjectKind {
 
 /// Map an object from one bounding box to another, as when dragging a resize handle.
 pub fn transform(kind: &ObjectKind, from: Rect, to: Rect) -> ObjectKind {
-    let sx = if from.width() > 1e-3 { to.width() / from.width() } else { 1.0 };
-    let sy = if from.height() > 1e-3 { to.height() / from.height() } else { 1.0 };
+    let sx = if from.width() > 1e-3 {
+        to.width() / from.width()
+    } else {
+        1.0
+    };
+    let sy = if from.height() > 1e-3 {
+        to.height() / from.height()
+    } else {
+        1.0
+    };
     let map = |p: Pos2| to.min + vec2((p.x - from.min.x) * sx, (p.y - from.min.y) * sy);
     let mut k = kind.clone();
     match &mut k {
@@ -272,7 +286,9 @@ pub fn transform(kind: &ObjectKind, from: Rect, to: Rect) -> ObjectKind {
             *a = map(*a);
             *b = map(*b);
         }
-        ObjectKind::Text { pos, size, extent, .. } => {
+        ObjectKind::Text {
+            pos, size, extent, ..
+        } => {
             // Text keeps its aspect ratio and scales with the box height.
             let s = sy.abs().max(0.05);
             *pos = map(*pos);
@@ -291,7 +307,11 @@ mod tests {
     use egui::Color32;
 
     fn style(fill: Fill) -> Style {
-        Style { color: Color32::BLACK, width: 4.0, fill }
+        Style {
+            color: Color32::BLACK,
+            width: 4.0,
+            fill,
+        }
     }
 
     #[test]
@@ -349,7 +369,12 @@ mod tests {
 
     #[test]
     fn smoothing_keeps_endpoints() {
-        let pts = vec![pos2(0.0, 0.0), pos2(10.0, 10.0), pos2(20.0, 0.0), pos2(30.0, 10.0)];
+        let pts = vec![
+            pos2(0.0, 0.0),
+            pos2(10.0, 10.0),
+            pos2(20.0, 0.0),
+            pos2(30.0, 10.0),
+        ];
         let s = smooth(&pts, 2);
         assert_eq!(s.first(), pts.first());
         assert_eq!(s.last(), pts.last());
@@ -388,7 +413,9 @@ mod tests {
         };
         let from = Rect::from_min_max(pos2(10.0, 10.0), pos2(20.0, 20.0));
         let to = Rect::from_min_max(pos2(0.0, 0.0), pos2(40.0, 20.0));
-        let ObjectKind::Shape { a, b, .. } = transform(&k, from, to) else { panic!() };
+        let ObjectKind::Shape { a, b, .. } = transform(&k, from, to) else {
+            panic!()
+        };
         assert_eq!((a, b), (pos2(0.0, 0.0), pos2(40.0, 20.0)));
     }
 }

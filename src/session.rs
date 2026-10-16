@@ -43,14 +43,21 @@ pub struct Session {
 
 impl Session {
     pub fn new() -> Self {
-        let dir = directories::ProjectDirs::from("", "", "drafty").map(|d| d.data_dir().to_path_buf());
-        Self { dir, last_save: Instant::now() }
+        let dir =
+            directories::ProjectDirs::from("", "", "drafty").map(|d| d.data_dir().to_path_buf());
+        Self {
+            dir,
+            last_save: Instant::now(),
+        }
     }
 
     /// Session stored in `dir` instead of the platform data dir.
     #[cfg(test)]
     pub fn at(dir: PathBuf) -> Self {
-        Self { dir: Some(dir), last_save: Instant::now() }
+        Self {
+            dir: Some(dir),
+            last_save: Instant::now(),
+        }
     }
 
     fn tabs_dir(&self) -> Option<PathBuf> {
@@ -94,19 +101,27 @@ impl Session {
         if docs.is_empty() {
             return None;
         }
-        Some(Restored { docs, active, grid: file.grid })
+        Some(Restored {
+            docs,
+            active,
+            grid: file.grid,
+        })
     }
 
     /// Write changed tabs and the tab list. Removes files of tabs that were closed.
     pub fn save(&mut self, docs: &mut [Document], active: usize, grid: bool) {
         self.last_save = Instant::now();
-        let (Some(dir), Some(tabs_dir)) = (self.dir.clone(), self.tabs_dir()) else { return };
+        let (Some(dir), Some(tabs_dir)) = (self.dir.clone(), self.tabs_dir()) else {
+            return;
+        };
         if let Err(e) = std::fs::create_dir_all(&tabs_dir) {
             eprintln!("drafty: can't create {}: {e}", tabs_dir.display());
             return;
         }
         for doc in docs.iter_mut() {
-            if doc.rev == doc.session_rev && tabs_dir.join(format!("{}.drafty", doc.session_id)).exists() {
+            if doc.rev == doc.session_rev
+                && tabs_dir.join(format!("{}.drafty", doc.session_id)).exists()
+            {
                 continue;
             }
             let path = tabs_dir.join(format!("{}.drafty", doc.session_id));
@@ -133,7 +148,10 @@ impl Session {
             eprintln!("drafty: can't write session: {e}");
         }
 
-        let keep: HashSet<String> = docs.iter().map(|d| format!("{}.drafty", d.session_id)).collect();
+        let keep: HashSet<String> = docs
+            .iter()
+            .map(|d| format!("{}.drafty", d.session_id))
+            .collect();
         if let Ok(entries) = std::fs::read_dir(&tabs_dir) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().into_owned();
@@ -164,7 +182,11 @@ mod tests {
         let mut a = Document::new("One");
         a.apply(Edit::Add(vec![ObjectKind::Stroke {
             points: vec![pos2(0.0, 0.0), pos2(1.0, 1.0)],
-            style: Style { color: Color32::RED, width: 2.0, fill: Fill::None },
+            style: Style {
+                color: Color32::RED,
+                width: 2.0,
+                fill: Fill::None,
+            },
             highlighter: false,
         }]));
         let b = Document::new("Two");

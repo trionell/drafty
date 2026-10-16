@@ -49,7 +49,11 @@ pub fn highlighter_stroke(width: f32, points: usize) -> Stroke {
     Stroke {
         width,
         // Flat ends look like a marker. A single dot needs a square cap to show at all.
-        line_cap: if points == 1 { LineCap::Square } else { LineCap::Butt },
+        line_cap: if points == 1 {
+            LineCap::Square
+        } else {
+            LineCap::Butt
+        },
         line_join: LineJoin::Round,
         ..Default::default()
     }

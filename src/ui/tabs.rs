@@ -15,13 +15,18 @@ impl App {
                 ui.spacing_mut().item_spacing.x = 2.0;
                 for i in 0..self.docs.len() {
                     if let Some((ri, buf)) = &mut self.renaming
-                        && *ri == i {
-                            let r = ui.add(egui::TextEdit::singleline(buf).id(Id::unique(RENAME_ID)).desired_width(140.0));
-                            if r.lost_focus() {
-                                rename_done = true;
-                            }
-                            continue;
+                        && *ri == i
+                    {
+                        let r = ui.add(
+                            egui::TextEdit::singleline(buf)
+                                .id(Id::unique(RENAME_ID))
+                                .desired_width(140.0),
+                        );
+                        if r.lost_focus() {
+                            rename_done = true;
                         }
+                        continue;
+                    }
                     let doc = &self.docs[i];
                     let mut title = doc.title.clone();
                     if doc.path.is_some() && doc.is_dirty() {
@@ -53,15 +58,14 @@ impl App {
             });
         });
 
-        if rename_done
-            && let Some((i, name)) = self.renaming.take() {
-                let name = name.trim();
-                if !name.is_empty() && i < self.docs.len() {
-                    self.docs[i].title = name.to_owned();
-                    // The title is saved in the session file, so count it as a change.
-                    self.docs[i].touch();
-                }
+        if rename_done && let Some((i, name)) = self.renaming.take() {
+            let name = name.trim();
+            if !name.is_empty() && i < self.docs.len() {
+                self.docs[i].title = name.to_owned();
+                // The title is saved in the session file, so count it as a change.
+                self.docs[i].touch();
             }
+        }
         if let Some(i) = switch {
             self.switch_tab(i);
         }

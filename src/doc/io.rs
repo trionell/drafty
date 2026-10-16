@@ -101,7 +101,12 @@ pub fn color_from_hex(s: &str) -> Option<Color32> {
     let byte = |i: usize| u8::from_str_radix(s.get(i..i + 2)?, 16).ok();
     match s.len() {
         6 => Some(Color32::from_rgb(byte(0)?, byte(2)?, byte(4)?)),
-        8 => Some(Color32::from_rgba_unmultiplied(byte(0)?, byte(2)?, byte(4)?, byte(6)?)),
+        8 => Some(Color32::from_rgba_unmultiplied(
+            byte(0)?,
+            byte(2)?,
+            byte(4)?,
+            byte(6)?,
+        )),
         _ => None,
     }
 }
@@ -153,7 +158,11 @@ fn object_to_file(
     images: &mut BTreeMap<String, String>,
 ) -> FileObject {
     match kind {
-        ObjectKind::Stroke { points, style, highlighter } => FileObject::Stroke {
+        ObjectKind::Stroke {
+            points,
+            style,
+            highlighter,
+        } => FileObject::Stroke {
             points: points.iter().map(|p| p2(*p)).collect(),
             color: color_to_hex(style.color),
             width: style.width,
@@ -168,7 +177,13 @@ fn object_to_file(
             fill: fill_str(style.fill).into(),
             double: matches!(shape, ShapeKind::Arrow { double: true }),
         },
-        ObjectKind::Text { pos, text, size, color, .. } => FileObject::Text {
+        ObjectKind::Text {
+            pos,
+            text,
+            size,
+            color,
+            ..
+        } => FileObject::Text {
             pos: p2(*pos),
             text: text.clone(),
             size: *size,
@@ -177,13 +192,19 @@ fn object_to_file(
         ObjectKind::Image { image, rect } => {
             let key = image.to_hex();
             if !images.contains_key(&key)
-                && let Some(data) = doc.images.get(image) {
-                    let b64 = base64::engine::general_purpose::STANDARD.encode(&*data.encoded());
-                    images.insert(key.clone(), b64);
-                }
+                && let Some(data) = doc.images.get(image)
+            {
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&*data.encoded());
+                images.insert(key.clone(), b64);
+            }
             FileObject::Image {
                 image: key,
-                rect: [r2(rect.min.x), r2(rect.min.y), r2(rect.max.x), r2(rect.max.y)],
+                rect: [
+                    r2(rect.min.x),
+                    r2(rect.min.y),
+                    r2(rect.max.x),
+                    r2(rect.max.y),
+                ],
             }
         }
     }
@@ -191,7 +212,8 @@ fn object_to_file(
 
 /// Parse a document. Text extents come back zero; the app re-measures them with its fonts.
 pub fn from_json(json: &str) -> Result<Document, String> {
-    let file: FileDoc = serde_json::from_str(json).map_err(|e| format!("not a Drafty file: {e}"))?;
+    let file: FileDoc =
+        serde_json::from_str(json).map_err(|e| format!("not a Drafty file: {e}"))?;
     if file.format != FORMAT {
         return Err("not a Drafty file".into());
     }
@@ -202,7 +224,11 @@ pub fn from_json(json: &str) -> Result<Document, String> {
         ));
     }
 
-    let mut doc = Document::new(if file.title.is_empty() { "Board".into() } else { file.title });
+    let mut doc = Document::new(if file.title.is_empty() {
+        "Board".into()
+    } else {
+        file.title
+    });
     if let Some(bg) = file.background.as_deref().and_then(color_from_hex) {
         doc.background = bg;
     }
@@ -212,18 +238,26 @@ pub fn from_json(json: &str) -> Result<Document, String> {
     }
 
     for (key, b64) in &file.images {
-        let Some(id) = ImageId::from_hex(key) else { continue };
+        let Some(id) = ImageId::from_hex(key) else {
+            continue;
+        };
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(b64)
             .map_err(|e| format!("broken image data: {e}"))?;
-        doc.images.insert(id, Arc::new(ImageData::from_encoded_lazy(bytes)?));
+        doc.images
+            .insert(id, Arc::new(ImageData::from_encoded_lazy(bytes)?));
     }
 
     let black = Color32::BLACK;
     let mut objects = Vec::new();
     for (i, o) in file.objects.into_iter().enumerate() {
         let kind = match o {
-            FileObject::Stroke { points, color, width, highlighter } => {
+            FileObject::Stroke {
+                points,
+                color,
+                width,
+                highlighter,
+            } => {
                 if points.is_empty() {
                     continue;
                 }
@@ -237,7 +271,15 @@ pub fn from_json(json: &str) -> Result<Document, String> {
                     highlighter,
                 }
             }
-            FileObject::Shape { shape, a, b, color, width, fill, double } => {
+            FileObject::Shape {
+                shape,
+                a,
+                b,
+                color,
+                width,
+                fill,
+                double,
+            } => {
                 let shape = match shape.as_str() {
                     "rect" => ShapeKind::Rect,
                     "ellipse" => ShapeKind::Ellipse,
@@ -262,7 +304,12 @@ pub fn from_json(json: &str) -> Result<Document, String> {
                     },
                 }
             }
-            FileObject::Text { pos, text, size, color } => ObjectKind::Text {
+            FileObject::Text {
+                pos,
+                text,
+                size,
+                color,
+            } => ObjectKind::Text {
                 pos: to_pos(pos),
                 text,
                 size,
@@ -270,7 +317,9 @@ pub fn from_json(json: &str) -> Result<Document, String> {
                 extent: Vec2::ZERO,
             },
             FileObject::Image { image, rect } => {
-                let Some(id) = ImageId::from_hex(&image) else { continue };
+                let Some(id) = ImageId::from_hex(&image) else {
+                    continue;
+                };
                 if !doc.images.contains_key(&id) {
                     continue;
                 }
@@ -281,7 +330,10 @@ pub fn from_json(json: &str) -> Result<Document, String> {
             }
             FileObject::Unknown => continue,
         };
-        objects.push(Arc::new(Object { id: ObjectId(i as u64 + 1), kind }));
+        objects.push(Arc::new(Object {
+            id: ObjectId(i as u64 + 1),
+            kind,
+        }));
     }
     doc.set_objects(objects);
     Ok(doc)
@@ -316,15 +368,32 @@ mod tests {
         let mut doc = Document::new("Sample");
         let (id, data) = ImageData::from_rgba([2, 1], vec![255, 0, 0, 255, 0, 0, 255, 255]);
         doc.add_image(id, data);
-        let style = Style { color: Color32::from_rgb(229, 57, 53), width: 4.0, fill: Fill::Translucent };
+        let style = Style {
+            color: Color32::from_rgb(229, 57, 53),
+            width: 4.0,
+            fill: Fill::Translucent,
+        };
         doc.apply(Edit::Add(vec![
             ObjectKind::Stroke {
                 points: vec![pos2(1.5, 2.25), pos2(10.0, 20.0)],
-                style: Style { fill: Fill::None, ..style },
+                style: Style {
+                    fill: Fill::None,
+                    ..style
+                },
                 highlighter: true,
             },
-            ObjectKind::Shape { shape: ShapeKind::Arrow { double: true }, a: pos2(0.0, 0.0), b: pos2(50.0, 5.0), style },
-            ObjectKind::Shape { shape: ShapeKind::Triangle, a: pos2(0.0, 0.0), b: pos2(50.0, 50.0), style },
+            ObjectKind::Shape {
+                shape: ShapeKind::Arrow { double: true },
+                a: pos2(0.0, 0.0),
+                b: pos2(50.0, 5.0),
+                style,
+            },
+            ObjectKind::Shape {
+                shape: ShapeKind::Triangle,
+                a: pos2(0.0, 0.0),
+                b: pos2(50.0, 50.0),
+                style,
+            },
             ObjectKind::Text {
                 pos: pos2(5.0, 6.0),
                 text: "hej å ä ö\nline 2".into(),
@@ -332,7 +401,10 @@ mod tests {
                 color: Color32::from_rgba_unmultiplied(0, 0, 0, 128),
                 extent: Vec2::ZERO,
             },
-            ObjectKind::Image { image: id, rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(20.0, 10.0)) },
+            ObjectKind::Image {
+                image: id,
+                rect: Rect::from_min_max(pos2(0.0, 0.0), pos2(20.0, 10.0)),
+            },
         ]));
         doc
     }

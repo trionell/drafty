@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet};
 use ab_glyph::{Font as _, FontRef, OutlineCurve};
 use egui::{Color32, Context, Pos2, Rect, Vec2};
 use tiny_skia::{
-    FillRule, FilterQuality, LineCap, LineJoin, PathBuilder, Pattern, Pixmap, SpreadMode,
-    Stroke, Transform,
+    FillRule, FilterQuality, LineCap, LineJoin, PathBuilder, Pattern, Pixmap, SpreadMode, Stroke,
+    Transform,
 };
 
 use super::{HIGHLIGHT_ALPHA, fill_color, highlighter_stroke, paint, polyline};
@@ -24,7 +24,10 @@ pub struct ExportOptions {
 
 impl Default for ExportOptions {
     fn default() -> Self {
-        Self { scale: 2.0, transparent: false }
+        Self {
+            scale: 2.0,
+            transparent: false,
+        }
     }
 }
 
@@ -118,15 +121,22 @@ impl Rasterizer<'_> {
     fn draw(&mut self, kind: &ObjectKind) {
         let id = Transform::identity();
         match kind {
-            ObjectKind::Stroke { points, style, highlighter } => {
-                let Some(path) = polyline(points, |p| self.map(p)) else { return };
+            ObjectKind::Stroke {
+                points,
+                style,
+                highlighter,
+            } => {
+                let Some(path) = polyline(points, |p| self.map(p)) else {
+                    return;
+                };
                 if *highlighter {
                     let c = style.color.gamma_multiply(HIGHLIGHT_ALPHA);
                     let s = highlighter_stroke(style.width * self.scale, points.len());
                     self.pixmap.stroke_path(&path, &paint(c), &s, id, None);
                 } else {
                     let s = self.stroke(style.width, LineCap::Round, LineJoin::Round);
-                    self.pixmap.stroke_path(&path, &paint(style.color), &s, id, None);
+                    self.pixmap
+                        .stroke_path(&path, &paint(style.color), &s, id, None);
                 }
             }
             ObjectKind::Shape { shape, a, b, style } => {
@@ -162,7 +172,11 @@ impl Rasterizer<'_> {
                     }
                     ShapeKind::Arrow { double } => {
                         let (start, end, heads) = geom::arrow_parts(*a, *b, style.width, *double);
-                        let cap = if *double { LineCap::Butt } else { LineCap::Round };
+                        let cap = if *double {
+                            LineCap::Butt
+                        } else {
+                            LineCap::Round
+                        };
                         let s = self.stroke(style.width, cap, LineJoin::Round);
                         if let Some(p) = polyline(&[start, end], |p| self.map(p)) {
                             self.pixmap.stroke_path(&p, &stroke_paint, &s, id, None);
@@ -173,7 +187,13 @@ impl Rasterizer<'_> {
                                 pb.push_path(&p);
                                 pb.close();
                                 if let Some(p) = pb.finish() {
-                                    self.pixmap.fill_path(&p, &stroke_paint, FillRule::Winding, id, None);
+                                    self.pixmap.fill_path(
+                                        &p,
+                                        &stroke_paint,
+                                        FillRule::Winding,
+                                        id,
+                                        None,
+                                    );
                                 }
                             }
                         }
@@ -182,12 +202,19 @@ impl Rasterizer<'_> {
                 };
                 let Some(path) = path else { return };
                 if let Some(f) = fill {
-                    self.pixmap.fill_path(&path, &paint(f), FillRule::Winding, id, None);
+                    self.pixmap
+                        .fill_path(&path, &paint(f), FillRule::Winding, id, None);
                 }
                 let s = self.stroke(style.width, LineCap::Butt, LineJoin::Miter);
                 self.pixmap.stroke_path(&path, &stroke_paint, &s, id, None);
             }
-            ObjectKind::Text { pos, text, size, color, .. } => self.draw_text(*pos, text, *size, *color),
+            ObjectKind::Text {
+                pos,
+                text,
+                size,
+                color,
+                ..
+            } => self.draw_text(*pos, text, *size, *color),
             ObjectKind::Image { image, rect } => self.draw_image(*image, *rect),
         }
     }
@@ -211,7 +238,9 @@ impl Rasterizer<'_> {
                         size / self.font.units_per_em().unwrap_or(2048.0)
                     }
                 });
-                let Some(outline) = self.font.outline(gid) else { continue };
+                let Some(outline) = self.font.outline(gid) else {
+                    continue;
+                };
                 let baseline = pos + row.pos.to_vec2() + glyph.pos.to_vec2();
                 let map = |p: ab_glyph::Point| {
                     let b = baseline + Vec2::new(p.x * k, -p.y * k);
@@ -220,7 +249,9 @@ impl Rasterizer<'_> {
                 let mut last: Option<ab_glyph::Point> = None;
                 for curve in &outline.curves {
                     let start = match curve {
-                        OutlineCurve::Line(a, _) | OutlineCurve::Quad(a, _, _) | OutlineCurve::Cubic(a, _, _, _) => *a,
+                        OutlineCurve::Line(a, _)
+                        | OutlineCurve::Quad(a, _, _)
+                        | OutlineCurve::Cubic(a, _, _, _) => *a,
                     };
                     if last != Some(start) {
                         if last.is_some() {
@@ -253,13 +284,21 @@ impl Rasterizer<'_> {
             }
         }
         if let Some(path) = pb.finish() {
-            self.pixmap.fill_path(&path, &paint(color), FillRule::Winding, Transform::identity(), None);
+            self.pixmap.fill_path(
+                &path,
+                &paint(color),
+                FillRule::Winding,
+                Transform::identity(),
+                None,
+            );
         }
     }
 
     fn draw_image(&mut self, image: ImageId, rect: Rect) {
         if !self.images.contains_key(&image) {
-            let Some(data) = self.doc.images.get(&image) else { return };
+            let Some(data) = self.doc.images.get(&image) else {
+                return;
+            };
             let rgba = data.rgba();
             let mut premul = Vec::with_capacity(rgba.len());
             for px in rgba.as_chunks::<4>().0 {
@@ -271,8 +310,12 @@ impl Rasterizer<'_> {
                     px[3],
                 ]);
             }
-            let Some(size) = tiny_skia::IntSize::from_wh(data.size[0], data.size[1]) else { return };
-            let Some(pm) = Pixmap::from_vec(premul, size) else { return };
+            let Some(size) = tiny_skia::IntSize::from_wh(data.size[0], data.size[1]) else {
+                return;
+            };
+            let Some(pm) = Pixmap::from_vec(premul, size) else {
+                return;
+            };
             self.images.insert(image, pm);
         }
         let img = &self.images[&image];
@@ -286,7 +329,11 @@ impl Rasterizer<'_> {
             1.0,
             Transform::from_row(sx, 0.0, 0.0, sy, dst.min.x, dst.min.y),
         );
-        let p = tiny_skia::Paint { shader, anti_alias: true, ..Default::default() };
+        let p = tiny_skia::Paint {
+            shader,
+            anti_alias: true,
+            ..Default::default()
+        };
         if let Some(r) = tiny_skia::Rect::from_ltrb(dst.min.x, dst.min.y, dst.max.x, dst.max.y) {
             self.pixmap.fill_rect(r, &p, Transform::identity(), None);
         }
@@ -330,7 +377,10 @@ mod tests {
             extent: crate::render::screen::measure_text(ctx, s, size),
         };
         doc.apply(Edit::Add(vec![
-            ObjectKind::Image { image: img, rect: Rect::from_min_size(pos2(0.0, 0.0), vec2(240.0, 120.0)) },
+            ObjectKind::Image {
+                image: img,
+                rect: Rect::from_min_size(pos2(0.0, 0.0), vec2(240.0, 120.0)),
+            },
             ObjectKind::Stroke {
                 points: vec![pos2(20.0, 30.0), pos2(150.0, 30.0)],
                 style: style(Color32::from_rgb(0xfd, 0xd8, 0x35), 16.0, Fill::None),
@@ -338,7 +388,12 @@ mod tests {
             },
             // A highlighter loop that crosses itself; the crossing must not get darker.
             ObjectKind::Stroke {
-                points: vec![pos2(30.0, 100.0), pos2(90.0, 70.0), pos2(90.0, 110.0), pos2(30.0, 80.0)],
+                points: vec![
+                    pos2(30.0, 100.0),
+                    pos2(90.0, 70.0),
+                    pos2(90.0, 110.0),
+                    pos2(30.0, 80.0),
+                ],
                 style: style(Color32::from_rgb(0x43, 0xa0, 0x47), 14.0, Fill::None),
                 highlighter: true,
             },
@@ -374,14 +429,25 @@ mod tests {
             },
             ObjectKind::Stroke {
                 points: crate::doc::geom::smooth(
-                    &[pos2(120.0, 150.0), pos2(150.0, 130.0), pos2(180.0, 160.0), pos2(210.0, 135.0), pos2(240.0, 150.0)],
+                    &[
+                        pos2(120.0, 150.0),
+                        pos2(150.0, 130.0),
+                        pos2(180.0, 160.0),
+                        pos2(210.0, 135.0),
+                        pos2(240.0, 150.0),
+                    ],
                     2,
                 ),
                 style: style(blue, 3.0, Fill::None),
                 highlighter: false,
             },
             text(pos2(260.0, 8.0), "Click here", 20.0, red),
-            text(pos2(110.0, 200.0), "Två rader\nåäö Q@#", 16.0, Color32::BLACK),
+            text(
+                pos2(110.0, 200.0),
+                "Två rader\nåäö Q@#",
+                16.0,
+                Color32::BLACK,
+            ),
         ]));
         doc
     }
@@ -392,7 +458,8 @@ mod tests {
         let mut out = None;
         let mut full = ctx.run_ui(RawInput::default(), |ui| {
             let doc = sample(ui.ctx());
-            let only: Option<HashSet<ObjectId>> = only_first.then(|| HashSet::from([doc.objects[3].id]));
+            let only: Option<HashSet<ObjectId>> =
+                only_first.then(|| HashSet::from([doc.objects[3].id]));
             out = render(ui.ctx(), &doc, only.as_ref(), opts);
         });
         full.textures_delta.clear();
@@ -401,13 +468,19 @@ mod tests {
 
     /// Compare with `tests/golden/<name>.png`. `UPDATE_GOLDEN=1` rewrites the file.
     fn check_golden(name: &str, pixmap: &Pixmap) {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden").join(format!("{name}.png"));
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/golden")
+            .join(format!("{name}.png"));
         if std::env::var_os("UPDATE_GOLDEN").is_some() || !path.exists() {
             std::fs::write(&path, encode_png(pixmap).unwrap()).unwrap();
             return;
         }
         let golden = Pixmap::load_png(&path).unwrap();
-        assert_eq!((golden.width(), golden.height()), (pixmap.width(), pixmap.height()), "{name}: size changed");
+        assert_eq!(
+            (golden.width(), golden.height()),
+            (pixmap.width(), pixmap.height()),
+            "{name}: size changed"
+        );
         let off = golden
             .data()
             .as_chunks::<4>()
@@ -417,7 +490,10 @@ mod tests {
             .filter(|(a, b)| a.iter().zip(b.iter()).any(|(x, y)| x.abs_diff(*y) > 8))
             .count();
         let total = (golden.width() * golden.height()) as usize;
-        assert!(off * 1000 <= total, "{name}: {off} of {total} pixels differ; UPDATE_GOLDEN=1 if intended");
+        assert!(
+            off * 1000 <= total,
+            "{name}: {off} of {total} pixels differ; UPDATE_GOLDEN=1 if intended"
+        );
     }
 
     #[test]
@@ -428,7 +504,13 @@ mod tests {
 
     #[test]
     fn golden_selection_transparent() {
-        let p = render_sample(ExportOptions { scale: 1.0, transparent: true }, true);
+        let p = render_sample(
+            ExportOptions {
+                scale: 1.0,
+                transparent: true,
+            },
+            true,
+        );
         // Just the rectangle plus padding, at 1x.
         assert_eq!((p.width(), p.height()), (70 + 3 + 32, 50 + 3 + 32));
         assert_eq!(p.pixel(0, 0).unwrap().alpha(), 0, "corner is transparent");
@@ -437,14 +519,26 @@ mod tests {
 
     #[test]
     fn highlighter_crossing_is_not_darker() {
-        let p = render_sample(ExportOptions { scale: 1.0, transparent: false }, false);
+        let p = render_sample(
+            ExportOptions {
+                scale: 1.0,
+                transparent: false,
+            },
+            false,
+        );
         // Content bounds start at the image's corner, 0,0, so board = pixel - padding.
         let at = |x: f32, y: f32| {
-            let px = p.pixel((x + PADDING) as u32, (y + PADDING) as u32).unwrap().demultiply();
+            let px = p
+                .pixel((x + PADDING) as u32, (y + PADDING) as u32)
+                .unwrap()
+                .demultiply();
             (px.red(), px.green(), px.blue())
         };
         let crossing = at(60.0, 90.0);
         let single = at(45.0, 92.5);
-        assert_eq!(crossing, single, "self-overlap doubled the highlighter alpha");
+        assert_eq!(
+            crossing, single,
+            "self-overlap doubled the highlighter alpha"
+        );
     }
 }

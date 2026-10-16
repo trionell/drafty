@@ -4,8 +4,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use egui::{
-    Color32, Context, CursorIcon, Event, FontData, FontDefinitions, FontFamily, Id, Key,
-    Modifiers, Pos2, Rect, Sense, Stroke, Ui, Vec2, ViewportCommand, vec2,
+    Color32, Context, CursorIcon, Event, FontData, FontDefinitions, FontFamily, Id, Key, Modifiers,
+    Pos2, Rect, Sense, Stroke, Ui, Vec2, ViewportCommand, vec2,
 };
 
 use crate::clipboard::{Clipboard, ObjectClip};
@@ -66,7 +66,14 @@ pub struct Shortcut {
 
 impl Shortcut {
     fn new(key: Key, action: Action, help: Option<&'static str>) -> Self {
-        Self { key, command: false, shift: Some(false), alt: false, action, help }
+        Self {
+            key,
+            command: false,
+            shift: Some(false),
+            alt: false,
+            action,
+            help,
+        }
     }
     fn cmd(mut self) -> Self {
         self.command = true;
@@ -97,10 +104,18 @@ impl Shortcut {
     pub fn label(&self) -> String {
         let mut s = String::new();
         if self.command {
-            s.push_str(if cfg!(target_os = "macos") { "Cmd+" } else { "Ctrl+" });
+            s.push_str(if cfg!(target_os = "macos") {
+                "Cmd+"
+            } else {
+                "Ctrl+"
+            });
         }
         if self.alt {
-            s.push_str(if cfg!(target_os = "macos") { "Option+" } else { "Alt+" });
+            s.push_str(if cfg!(target_os = "macos") {
+                "Option+"
+            } else {
+                "Alt+"
+            });
         }
         if self.shift == Some(true) {
             s.push_str("Shift+");
@@ -125,7 +140,17 @@ fn shortcuts() -> Vec<Shortcut> {
     for t in Tool::ALL {
         v.push(S::new(t.key(), A::Tool(t), None));
     }
-    let nums = [Key::Num1, Key::Num2, Key::Num3, Key::Num4, Key::Num5, Key::Num6, Key::Num7, Key::Num8, Key::Num9];
+    let nums = [
+        Key::Num1,
+        Key::Num2,
+        Key::Num3,
+        Key::Num4,
+        Key::Num5,
+        Key::Num6,
+        Key::Num7,
+        Key::Num8,
+        Key::Num9,
+    ];
     for (i, k) in nums.iter().take(PALETTE.len()).enumerate() {
         v.push(S::new(*k, A::Color(i), None));
     }
@@ -144,19 +169,27 @@ fn shortcuts() -> Vec<Shortcut> {
         S::new(Key::A, A::SelectAll, Some("Select all")).cmd(),
         S::new(Key::CloseBracket, A::ToFront, Some("Bring to front")).cmd(),
         S::new(Key::OpenBracket, A::ToBack, Some("Send to back")).cmd(),
-        S::new(Key::C, A::CopyPng, Some("Copy board (or selection) as PNG")).cmd().shift(),
-        S::new(Key::V, A::PasteNewTab, Some("Paste image into a new tab")).cmd().shift(),
+        S::new(Key::C, A::CopyPng, Some("Copy board (or selection) as PNG"))
+            .cmd()
+            .shift(),
+        S::new(Key::V, A::PasteNewTab, Some("Paste image into a new tab"))
+            .cmd()
+            .shift(),
         S::new(Key::E, A::ExportPng, Some("Export PNG file")).cmd(),
         S::new(Key::T, A::NewTab, Some("New tab")).cmd(),
         S::new(Key::W, A::CloseTab, Some("Close tab")).cmd(),
         S::new(Key::Tab, A::NextTab, Some("Next tab")).cmd(),
-        S::new(Key::Tab, A::PrevTab, Some("Previous tab")).cmd().shift(),
+        S::new(Key::Tab, A::PrevTab, Some("Previous tab"))
+            .cmd()
+            .shift(),
         S::new(Key::S, A::Save, Some("Save")).cmd(),
         S::new(Key::S, A::SaveAs, Some("Save as")).cmd().shift(),
         S::new(Key::O, A::Open, Some("Open")).cmd(),
         S::new(Key::Num0, A::ZoomReset, Some("Zoom to 100%")).cmd(),
         S::new(Key::Num1, A::ZoomFit, Some("Zoom to fit")).cmd(),
-        S::new(Key::Equals, A::ZoomIn, Some("Zoom in")).cmd().any_shift(),
+        S::new(Key::Equals, A::ZoomIn, Some("Zoom in"))
+            .cmd()
+            .any_shift(),
         S::new(Key::Plus, A::ZoomIn, None).cmd().any_shift(),
         S::new(Key::Minus, A::ZoomOut, Some("Zoom out")).cmd(),
         S::new(Key::Quote, A::ToggleGrid, Some("Toggle dot grid")).cmd(),
@@ -268,7 +301,9 @@ impl App {
 
     /// Work that needs fonts, which egui only has once the first frame starts.
     fn first_frame(&mut self) {
-        let Some(files) = self.startup_files.take() else { return };
+        let Some(files) = self.startup_files.take() else {
+            return;
+        };
         // Text extents aren't stored in files; measure them with our fonts.
         for doc in &mut self.docs {
             remeasure_text(&self.ctx, doc);
@@ -352,10 +387,15 @@ impl App {
         if self.active >= self.docs.len() || self.active > i {
             self.active = self.active.saturating_sub(1).min(self.docs.len() - 1);
         }
-        let keep: HashSet<ImageId> = self.docs.iter().flat_map(|d| d.images.keys().copied()).collect();
+        let keep: HashSet<ImageId> = self
+            .docs
+            .iter()
+            .flat_map(|d| d.images.keys().copied())
+            .collect();
         self.render_cache.retain_images(&keep);
         // Write now so the closed tab's autosave file goes away too.
-        self.session.save(&mut self.docs, self.active, self.show_grid);
+        self.session
+            .save(&mut self.docs, self.active, self.show_grid);
     }
 
     /// Reuse the current tab if it's an untouched blank board, otherwise open a new one.
@@ -376,8 +416,17 @@ impl App {
         let events = ctx.input(|i| i.events.clone());
         for ev in events {
             match ev {
-                Event::Key { key, pressed: true, modifiers, .. } => {
-                    let action = self.shortcuts.iter().find(|s| s.matches(key, modifiers)).map(|s| s.action);
+                Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } => {
+                    let action = self
+                        .shortcuts
+                        .iter()
+                        .find(|s| s.matches(key, modifiers))
+                        .map(|s| s.action);
                     if let Some(a) = action {
                         self.run(a);
                     }
@@ -386,7 +435,11 @@ impl App {
                 Event::Cut => self.copy_objects(true),
                 Event::Paste(text) => self.paste_text(text),
                 Event::PasteImage(img) => {
-                    let rgba: Vec<u8> = img.pixels.iter().flat_map(|c| c.to_srgba_unmultiplied()).collect();
+                    let rgba: Vec<u8> = img
+                        .pixels
+                        .iter()
+                        .flat_map(|c| c.to_srgba_unmultiplied())
+                        .collect();
                     self.insert_rgba([img.size[0] as u32, img.size[1] as u32], rgba, false);
                 }
                 _ => {}
@@ -401,14 +454,22 @@ impl App {
             A::Color(i) => self.apply_color(PALETTE[i]),
             A::WidthDown | A::WidthUp => {
                 let w = self.current_width();
-                let next = if action == A::WidthUp { (w * 1.5).max(w + 1.0) } else { (w / 1.5).min(w - 1.0) };
+                let next = if action == A::WidthUp {
+                    (w * 1.5).max(w + 1.0)
+                } else {
+                    (w / 1.5).min(w - 1.0)
+                };
                 self.apply_width(next.round().clamp(1.0, 64.0), false);
             }
             A::Undo | A::Redo => {
                 self.commit_text();
                 self.cancel_ops();
                 let doc = self.doc_mut();
-                if action == A::Undo { doc.undo() } else { doc.redo() };
+                if action == A::Undo {
+                    doc.undo()
+                } else {
+                    doc.redo()
+                };
             }
             A::Delete => {
                 let sel = self.doc().selection.clone();
@@ -431,7 +492,11 @@ impl App {
             }
             A::ToFront | A::ToBack => {
                 let sel = self.doc().selection.clone();
-                let edit = if action == A::ToFront { Edit::ToFront(sel) } else { Edit::ToBack(sel) };
+                let edit = if action == A::ToFront {
+                    Edit::ToFront(sel)
+                } else {
+                    Edit::ToBack(sel)
+                };
                 self.doc_mut().apply(edit);
             }
             A::CopyPng => self.copy_png(),
@@ -465,7 +530,8 @@ impl App {
             A::Escape => {
                 if self.show_help {
                     self.show_help = false;
-                } else if self.pen.is_active() || self.shape.is_active() || self.select.is_active() {
+                } else if self.pen.is_active() || self.shape.is_active() || self.select.is_active()
+                {
                     self.cancel_ops();
                 } else {
                     self.doc_mut().selection.clear();
@@ -476,7 +542,10 @@ impl App {
                     .doc()
                     .selected_objects()
                     .iter()
-                    .map(|o| Object { id: o.id, kind: crate::doc::geom::translate(&o.kind, vec2(dx, dy)) })
+                    .map(|o| Object {
+                        id: o.id,
+                        kind: crate::doc::geom::translate(&o.kind, vec2(dx, dy)),
+                    })
                     .collect();
                 self.doc_mut().apply(Edit::Replace(moved));
             }
@@ -488,7 +557,12 @@ impl App {
         let doc = self.doc_mut();
         match doc.content_bounds() {
             Some(b) => doc.camera.fit(b, size, max_zoom),
-            None => doc.camera = crate::doc::Camera { origin: doc.camera.origin, ..Default::default() },
+            None => {
+                doc.camera = crate::doc::Camera {
+                    origin: doc.camera.origin,
+                    ..Default::default()
+                }
+            }
         }
     }
 
@@ -501,9 +575,14 @@ impl App {
         }
         // Images have no style, so skip them when picking which controls to show.
         let sel = self.doc().selected_objects();
-        let first = sel.iter().map(|o| &o.kind).find(|k| !matches!(k, ObjectKind::Image { .. }));
+        let first = sel
+            .iter()
+            .map(|o| &o.kind)
+            .find(|k| !matches!(k, ObjectKind::Image { .. }));
         match first {
-            Some(ObjectKind::Stroke { highlighter: true, .. }) => Tool::Highlighter,
+            Some(ObjectKind::Stroke {
+                highlighter: true, ..
+            }) => Tool::Highlighter,
             Some(ObjectKind::Stroke { .. }) => Tool::Pen,
             Some(ObjectKind::Text { .. }) => Tool::Text,
             Some(ObjectKind::Shape { shape, .. }) if shape.is_linear() => Tool::Line,
@@ -516,7 +595,9 @@ impl App {
         if self.tool == Tool::Select {
             for o in self.doc().selected_objects() {
                 match &o.kind {
-                    ObjectKind::Stroke { style, .. } | ObjectKind::Shape { style, .. } => return style.width,
+                    ObjectKind::Stroke { style, .. } | ObjectKind::Shape { style, .. } => {
+                        return style.width;
+                    }
                     _ => {}
                 }
             }
@@ -559,7 +640,9 @@ impl App {
         self.edit_selection(false, |k| {
             let mut k = k.clone();
             match &mut k {
-                ObjectKind::Stroke { style, .. } | ObjectKind::Shape { style, .. } => style.color = c,
+                ObjectKind::Stroke { style, .. } | ObjectKind::Shape { style, .. } => {
+                    style.color = c
+                }
                 ObjectKind::Text { color, .. } => *color = c,
                 ObjectKind::Image { .. } => return None,
             }
@@ -573,7 +656,9 @@ impl App {
         self.edit_selection(coalesce, |k| {
             let mut k = k.clone();
             match &mut k {
-                ObjectKind::Stroke { style, .. } | ObjectKind::Shape { style, .. } => style.width = w,
+                ObjectKind::Stroke { style, .. } | ObjectKind::Shape { style, .. } => {
+                    style.width = w
+                }
                 _ => return None,
             }
             Some(k)
@@ -583,12 +668,14 @@ impl App {
     pub fn apply_fill(&mut self, f: crate::doc::Fill) {
         self.settings.fill = f;
         self.edit_selection(false, |k| match k {
-            ObjectKind::Shape { shape, a, b, style } if !shape.is_linear() => Some(ObjectKind::Shape {
-                shape: *shape,
-                a: *a,
-                b: *b,
-                style: crate::doc::Style { fill: f, ..*style },
-            }),
+            ObjectKind::Shape { shape, a, b, style } if !shape.is_linear() => {
+                Some(ObjectKind::Shape {
+                    shape: *shape,
+                    a: *a,
+                    b: *b,
+                    style: crate::doc::Style { fill: f, ..*style },
+                })
+            }
             _ => None,
         });
     }
@@ -600,7 +687,9 @@ impl App {
         }
         let ctx = self.ctx.clone();
         self.edit_selection(false, |k| match k {
-            ObjectKind::Text { pos, text, color, .. } => Some(ObjectKind::Text {
+            ObjectKind::Text {
+                pos, text, color, ..
+            } => Some(ObjectKind::Text {
                 pos: *pos,
                 text: text.clone(),
                 size,
@@ -614,7 +703,12 @@ impl App {
     pub fn apply_arrow_double(&mut self, double: bool) {
         self.settings.arrow_double = double;
         self.edit_selection(false, |k| match k {
-            ObjectKind::Shape { shape: crate::doc::ShapeKind::Arrow { .. }, a, b, style } => Some(ObjectKind::Shape {
+            ObjectKind::Shape {
+                shape: crate::doc::ShapeKind::Arrow { .. },
+                a,
+                b,
+                style,
+            } => Some(ObjectKind::Shape {
                 shape: crate::doc::ShapeKind::Arrow { double },
                 a: *a,
                 b: *b,
@@ -628,16 +722,38 @@ impl App {
 
     fn begin_text(&mut self, target: Option<ObjectId>, pos: Pos2) {
         let doc_id = self.doc().session_id.clone();
-        let (text, size, color, pos) = match target.and_then(|id| self.doc().get(id)).map(|o| &o.kind) {
-            Some(ObjectKind::Text { text, size, color, pos, .. }) => (text.clone(), *size, *color, *pos),
-            _ => (String::new(), self.settings.font_size, self.settings.color, pos),
-        };
-        self.text = Some(TextEditState { target, doc_id, pos, text, size, color, focus_requested: false });
+        let (text, size, color, pos) =
+            match target.and_then(|id| self.doc().get(id)).map(|o| &o.kind) {
+                Some(ObjectKind::Text {
+                    text,
+                    size,
+                    color,
+                    pos,
+                    ..
+                }) => (text.clone(), *size, *color, *pos),
+                _ => (
+                    String::new(),
+                    self.settings.font_size,
+                    self.settings.color,
+                    pos,
+                ),
+            };
+        self.text = Some(TextEditState {
+            target,
+            doc_id,
+            pos,
+            text,
+            size,
+            color,
+            focus_requested: false,
+        });
     }
 
     pub fn commit_text(&mut self) {
         let Some(t) = self.text.take() else { return };
-        let Some(doc) = self.docs.iter_mut().find(|d| d.session_id == t.doc_id) else { return };
+        let Some(doc) = self.docs.iter_mut().find(|d| d.session_id == t.doc_id) else {
+            return;
+        };
         let empty = t.text.trim().is_empty();
         let kind = ObjectKind::Text {
             pos: t.pos,
@@ -694,7 +810,12 @@ impl App {
                     lost = true;
                 }
                 let r = out.response.rect.expand(4.0);
-                ui.painter().rect_stroke(r, 2.0, Stroke::new(1.0, select::ACCENT), egui::StrokeKind::Outside);
+                ui.painter().rect_stroke(
+                    r,
+                    2.0,
+                    Stroke::new(1.0, select::ACCENT),
+                    egui::StrokeKind::Outside,
+                );
             });
         if lost {
             self.commit_text();
@@ -708,7 +829,11 @@ impl App {
         if doc.selection.is_empty() {
             return;
         }
-        let objects: Vec<ObjectKind> = doc.selected_objects().iter().map(|o| o.kind.clone()).collect();
+        let objects: Vec<ObjectKind> = doc
+            .selected_objects()
+            .iter()
+            .map(|o| o.kind.clone())
+            .collect();
         let images = objects
             .iter()
             .filter_map(|k| match k {
@@ -723,7 +848,11 @@ impl App {
             COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         );
         self.clipboard.set_text(&marker);
-        self.object_clip = Some(ObjectClip { objects, images, marker });
+        self.object_clip = Some(ObjectClip {
+            objects,
+            images,
+            marker,
+        });
         if cut {
             self.run(Action::Delete);
         }
@@ -737,7 +866,11 @@ impl App {
     /// Where pasted things go: under the cursor if it's on the board, else the view center.
     fn paste_point(&self) -> Pos2 {
         let cam = self.doc().camera;
-        let p = if self.canvas_rect.contains(self.last_pointer) { self.last_pointer } else { self.canvas_rect.center() };
+        let p = if self.canvas_rect.contains(self.last_pointer) {
+            self.last_pointer
+        } else {
+            self.canvas_rect.center()
+        };
         cam.to_board(p)
     }
 
@@ -748,10 +881,20 @@ impl App {
             return;
         }
         if let Some(clip) = self.object_clip.as_ref().filter(|c| c.marker == text) {
-            let Some(bounds) = crate::doc::geom::union_bounds(clip.objects.iter()) else { return };
+            let Some(bounds) = crate::doc::geom::union_bounds(clip.objects.iter()) else {
+                return;
+            };
             let d = self.paste_point() - bounds.center();
-            let kinds: Vec<_> = clip.objects.iter().map(|k| crate::doc::geom::translate(k, d)).collect();
-            let images: Vec<_> = clip.images.iter().map(|(id, data)| (*id, data.clone())).collect();
+            let kinds: Vec<_> = clip
+                .objects
+                .iter()
+                .map(|k| crate::doc::geom::translate(k, d))
+                .collect();
+            let images: Vec<_> = clip
+                .images
+                .iter()
+                .map(|(id, data)| (*id, data.clone()))
+                .collect();
             let doc = self.doc_mut();
             for (id, data) in images {
                 doc.images.entry(id).or_insert(data);
@@ -768,7 +911,13 @@ impl App {
         let size = self.settings.font_size;
         let extent = screen::measure_text(&self.ctx, &text, size);
         let pos = self.paste_point() - extent * 0.5;
-        let kind = ObjectKind::Text { pos, text, size, color: self.settings.color, extent };
+        let kind = ObjectKind::Text {
+            pos,
+            text,
+            size,
+            color: self.settings.color,
+            extent,
+        };
         let ids = self.doc_mut().apply(Edit::Add(vec![kind]));
         self.set_tool(Tool::Select);
         self.doc_mut().selection = ids.into_iter().collect();
@@ -788,7 +937,11 @@ impl App {
             let title = self.next_board_title();
             self.blank_tab(title);
         }
-        let center = if new_tab { Pos2::ZERO + size * 0.5 } else { at.unwrap_or_else(|| self.paste_point()) };
+        let center = if new_tab {
+            Pos2::ZERO + size * 0.5
+        } else {
+            at.unwrap_or_else(|| self.paste_point())
+        };
         let doc = self.doc_mut();
         doc.add_image(id, data);
         // Encode pasted pixels in the background, so the next autosave doesn't stall the
@@ -819,10 +972,16 @@ impl App {
             self.toast("Nothing to copy");
             return;
         };
-        let what = if self.doc().selection.is_empty() { "board" } else { "selection" };
+        let what = if self.doc().selection.is_empty() {
+            "board"
+        } else {
+            "selection"
+        };
         let rgba = export::to_rgba(&pixmap);
         let size = [pixmap.width(), pixmap.height()];
-        match self.clipboard.set_image(size, rgba, || export::encode_png(&pixmap).unwrap_or_default()) {
+        match self.clipboard.set_image(size, rgba, || {
+            export::encode_png(&pixmap).unwrap_or_default()
+        }) {
             Ok(()) => self.toast(format!("Copied {what} as PNG")),
             Err(e) => self.toast(format!("Copy failed: {e}")),
         }
@@ -842,7 +1001,8 @@ impl App {
             return;
         };
         let path = with_extension(path, "png");
-        let result = export::encode_png(&pixmap).and_then(|png| io::write_atomic(&path, &png).map_err(|e| e.to_string()));
+        let result = export::encode_png(&pixmap)
+            .and_then(|png| io::write_atomic(&path, &png).map_err(|e| e.to_string()));
         match result {
             Ok(()) => self.toast(format!("Exported {}", file_name(&path))),
             Err(e) => self.toast(format!("Export failed: {e}")),
@@ -867,7 +1027,10 @@ impl App {
             }
         };
         let doc = self.doc_mut();
-        doc.title = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        doc.title = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
         match io::save(doc, &path) {
             Ok(()) => {
                 doc.path = Some(path.clone());
@@ -880,7 +1043,10 @@ impl App {
 
     fn open_dialog(&mut self) {
         let Some(paths) = rfd::FileDialog::new()
-            .add_filter("Drafty boards and images", &["drafty", "png", "jpg", "jpeg"])
+            .add_filter(
+                "Drafty boards and images",
+                &["drafty", "png", "jpg", "jpeg"],
+            )
             .pick_files()
         else {
             return;
@@ -893,16 +1059,26 @@ impl App {
     /// Open a board in a new tab. Images go into a new tab, or onto the current board at
     /// `drop_at` when dropped onto it.
     pub fn open_path(&mut self, path: &Path, drop_at: Option<Pos2>) {
-        let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+        let ext = path
+            .extension()
+            .map(|e| e.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
         if ext == "drafty" {
-            if let Some(i) = self.docs.iter().position(|d| d.path.as_deref() == Some(path)) {
+            if let Some(i) = self
+                .docs
+                .iter()
+                .position(|d| d.path.as_deref() == Some(path))
+            {
                 self.switch_tab(i);
                 return;
             }
             match io::load(path) {
                 Ok(mut doc) => {
                     remeasure_text(&self.ctx, &mut doc);
-                    doc.title = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                    doc.title = path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or_default();
                     let d = self.doc();
                     if d.objects.is_empty() && d.path.is_none() && d.history_is_empty() {
                         self.docs[self.active] = doc;
@@ -916,13 +1092,18 @@ impl App {
             }
             return;
         }
-        let loaded = std::fs::read(path).map_err(|e| e.to_string()).and_then(ImageData::from_encoded);
+        let loaded = std::fs::read(path)
+            .map_err(|e| e.to_string())
+            .and_then(ImageData::from_encoded);
         match loaded {
             Ok((id, data)) => {
                 if drop_at.is_some() {
                     self.insert_image(id, data, false, drop_at);
                 } else {
-                    let title = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                    let title = path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or_default();
                     self.insert_image(id, data, true, None);
                     self.doc_mut().title = title;
                 }
@@ -936,7 +1117,9 @@ impl App {
         if dropped.is_empty() {
             return;
         }
-        let at = ctx.input(|i| i.pointer.latest_pos()).unwrap_or(self.canvas_rect.center());
+        let at = ctx
+            .input(|i| i.pointer.latest_pos())
+            .unwrap_or(self.canvas_rect.center());
         let board = self.doc().camera.to_board(at);
         for (n, f) in dropped.iter().enumerate() {
             // Fan out several dropped images so they don't stack exactly.
@@ -952,23 +1135,36 @@ impl App {
         let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
         self.canvas_rect = rect;
         let typing = ctx.egui_wants_keyboard_input();
-        let (pointer, pressed, down, released, double, shift, scroll, zoom, middle_pressed, middle_down, delta, space) =
-            ctx.input(|i| {
-                (
-                    i.pointer.latest_pos(),
-                    i.pointer.primary_pressed(),
-                    i.pointer.primary_down(),
-                    i.pointer.primary_released(),
-                    i.pointer.button_double_clicked(egui::PointerButton::Primary),
-                    i.modifiers.shift,
-                    i.smooth_scroll_delta,
-                    i.zoom_delta(),
-                    i.pointer.button_pressed(egui::PointerButton::Middle),
-                    i.pointer.middle_down(),
-                    i.pointer.delta(),
-                    i.key_down(Key::Space) && !typing,
-                )
-            });
+        let (
+            pointer,
+            pressed,
+            down,
+            released,
+            double,
+            shift,
+            scroll,
+            zoom,
+            middle_pressed,
+            middle_down,
+            delta,
+            space,
+        ) = ctx.input(|i| {
+            (
+                i.pointer.latest_pos(),
+                i.pointer.primary_pressed(),
+                i.pointer.primary_down(),
+                i.pointer.primary_released(),
+                i.pointer
+                    .button_double_clicked(egui::PointerButton::Primary),
+                i.modifiers.shift,
+                i.smooth_scroll_delta,
+                i.zoom_delta(),
+                i.pointer.button_pressed(egui::PointerButton::Middle),
+                i.pointer.middle_down(),
+                i.pointer.delta(),
+                i.key_down(Key::Space) && !typing,
+            )
+        });
         if let Some(p) = pointer {
             self.last_pointer = p;
         }
@@ -1008,14 +1204,29 @@ impl App {
                 self.capturing = true;
             }
             if self.capturing || hovered {
-                let base = Input { pos, pressed: false, down, released: false, double_clicked: false, shift, px };
+                let base = Input {
+                    pos,
+                    pressed: false,
+                    down,
+                    released: false,
+                    double_clicked: false,
+                    shift,
+                    px,
+                };
                 // Press and release can land in the same frame on a quick click. Feed them
                 // as two steps so tools see both.
                 if start {
-                    self.tool_input(Input { pressed: true, double_clicked: double, ..base });
+                    self.tool_input(Input {
+                        pressed: true,
+                        double_clicked: double,
+                        ..base
+                    });
                 }
                 let released_now = released && self.capturing;
-                self.tool_input(Input { released: released_now, ..base });
+                self.tool_input(Input {
+                    released: released_now,
+                    ..base
+                });
                 if released_now {
                     self.capturing = false;
                     self.style_drag = false;
@@ -1033,15 +1244,18 @@ impl App {
                 CursorIcon::Grab
             } else {
                 match self.tool {
-                    Tool::Select => self.select.cursor(self.doc(), &Input {
-                        pos,
-                        pressed: false,
-                        down,
-                        released: false,
-                        double_clicked: false,
-                        shift,
-                        px,
-                    }),
+                    Tool::Select => self.select.cursor(
+                        self.doc(),
+                        &Input {
+                            pos,
+                            pressed: false,
+                            down,
+                            released: false,
+                            double_clicked: false,
+                            shift,
+                            px,
+                        },
+                    ),
                     Tool::Text => CursorIcon::Text,
                     _ => CursorIcon::Crosshair,
                 }
@@ -1077,7 +1291,9 @@ impl App {
                 None
             }
             t => {
-                let shape = t.shape(self.settings.arrow_double).expect("remaining tools are shapes");
+                let shape = t
+                    .shape(self.settings.arrow_double)
+                    .expect("remaining tools are shapes");
                 self.shape.input(&input, shape, &self.settings)
             }
         };
@@ -1096,18 +1312,30 @@ impl App {
 
         let mut hidden = HashSet::new();
         if let Some(t) = &self.text
-            && let Some(id) = t.target {
-                hidden.insert(id);
-            }
-        let dimmed = if self.tool == Tool::Eraser { self.eraser.hits.clone() } else { HashSet::new() };
+            && let Some(id) = t.target
+        {
+            hidden.insert(id);
+        }
+        let dimmed = if self.tool == Tool::Eraser {
+            self.eraser.hits.clone()
+        } else {
+            HashSet::new()
+        };
 
-        let mut r = Renderer { ctx, painter: &painter, cam: doc.camera, cache: &mut self.render_cache };
+        let mut r = Renderer {
+            ctx,
+            painter: &painter,
+            cam: doc.camera,
+            cache: &mut self.render_cache,
+        };
         r.draw_document(doc, &hidden, &dimmed);
 
         let preview = match self.tool {
             Tool::Pen => self.pen.preview(&self.settings, false),
             Tool::Highlighter => self.pen.preview(&self.settings, true),
-            t => t.shape(self.settings.arrow_double).and_then(|s| self.shape.preview(s, &self.settings)),
+            t => t
+                .shape(self.settings.arrow_double)
+                .and_then(|s| self.shape.preview(s, &self.settings)),
         };
         if let Some(kind) = preview {
             r.draw(doc, &kind, None, 1.0);
@@ -1118,9 +1346,10 @@ impl App {
             self.select.draw(&painter, doc, &doc.camera);
         }
         if self.tool == Tool::Eraser
-            && let Some(p) = hover {
-                painter.circle_stroke(p, eraser::RADIUS, Stroke::new(1.0, Color32::from_gray(90)));
-            }
+            && let Some(p) = hover
+        {
+            painter.circle_stroke(p, eraser::RADIUS, Stroke::new(1.0, Color32::from_gray(90)));
+        }
         self.paint_toast(ctx, &painter, rect);
     }
 
@@ -1132,7 +1361,11 @@ impl App {
             self.toast = None;
             return;
         }
-        let galley = painter.layout_no_wrap(msg.clone(), egui::FontId::proportional(14.0), Color32::WHITE);
+        let galley = painter.layout_no_wrap(
+            msg.clone(),
+            egui::FontId::proportional(14.0),
+            Color32::WHITE,
+        );
         let size = galley.size() + vec2(24.0, 14.0);
         let r = Rect::from_center_size(rect.center_bottom() - vec2(0.0, 40.0), size);
         painter.rect_filled(r, 8.0, Color32::from_black_alpha(200));
@@ -1142,7 +1375,15 @@ impl App {
 
     fn update_title(&mut self, ctx: &Context) {
         let doc = self.doc();
-        let title = format!("{}{} - Drafty", doc.title, if doc.is_dirty() && doc.path.is_some() { " *" } else { "" });
+        let title = format!(
+            "{}{} - Drafty",
+            doc.title,
+            if doc.is_dirty() && doc.path.is_some() {
+                " *"
+            } else {
+                ""
+            }
+        );
         if title != self.last_title {
             ctx.send_viewport_cmd(ViewportCommand::Title(title.clone()));
             self.last_title = title;
@@ -1155,10 +1396,15 @@ impl App {
         }
         let since = self.session.last_save.elapsed();
         if since >= session::INTERVAL && !self.capturing {
-            self.session.save(&mut self.docs, self.active, self.show_grid);
+            self.session
+                .save(&mut self.docs, self.active, self.show_grid);
         } else {
             // Wake up for the save even if the user stops touching the app.
-            ctx.request_repaint_after(session::INTERVAL.saturating_sub(since).max(Duration::from_secs(1)));
+            ctx.request_repaint_after(
+                session::INTERVAL
+                    .saturating_sub(since)
+                    .max(Duration::from_secs(1)),
+            );
         }
     }
 }
@@ -1189,7 +1435,8 @@ impl App {
     /// Finish typing and write the session. Called on quit.
     pub fn shutdown(&mut self) {
         self.commit_text();
-        self.session.save(&mut self.docs, self.active, self.show_grid);
+        self.session
+            .save(&mut self.docs, self.active, self.show_grid);
     }
 }
 
@@ -1211,31 +1458,47 @@ impl Document {
 
 pub fn install_fonts(ctx: &Context) {
     let mut fonts = FontDefinitions::default();
-    fonts.font_data.insert("inter".into(), Arc::new(FontData::from_static(crate::INTER)));
-    fonts.families.insert(FontFamily::Proportional, vec!["inter".into()]);
-    fonts.families.insert(FontFamily::Monospace, vec!["inter".into()]);
+    fonts.font_data.insert(
+        "inter".into(),
+        Arc::new(FontData::from_static(crate::INTER)),
+    );
+    fonts
+        .families
+        .insert(FontFamily::Proportional, vec!["inter".into()]);
+    fonts
+        .families
+        .insert(FontFamily::Monospace, vec!["inter".into()]);
     ctx.set_fonts(fonts);
 }
 
 /// Fill in text extents, which files don't store.
 fn remeasure_text(ctx: &Context, doc: &mut Document) {
     for slot in &mut doc.objects {
-        if let ObjectKind::Text { text, size, extent, .. } = &slot.kind
-            && *extent == Vec2::ZERO {
-                let e = screen::measure_text(ctx, text, *size);
-                let mut o = (**slot).clone();
-                if let ObjectKind::Text { extent, .. } = &mut o.kind {
-                    *extent = e;
-                }
-                *slot = Arc::new(o);
+        if let ObjectKind::Text {
+            text, size, extent, ..
+        } = &slot.kind
+            && *extent == Vec2::ZERO
+        {
+            let e = screen::measure_text(ctx, text, *size);
+            let mut o = (**slot).clone();
+            if let ObjectKind::Text { extent, .. } = &mut o.kind {
+                *extent = e;
             }
+            *slot = Arc::new(o);
+        }
     }
 }
 
 fn with_extension(p: PathBuf, ext: &str) -> PathBuf {
-    if p.extension().is_some_and(|e| e.eq_ignore_ascii_case(ext)) { p } else { p.with_extension(ext) }
+    if p.extension().is_some_and(|e| e.eq_ignore_ascii_case(ext)) {
+        p
+    } else {
+        p.with_extension(ext)
+    }
 }
 
 fn file_name(p: &Path) -> String {
-    p.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+    p.file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }

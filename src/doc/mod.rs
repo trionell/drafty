@@ -155,7 +155,10 @@ impl ImageData {
         if let Some(p) = self.pixels().as_ref() {
             return p.clone();
         }
-        let bytes = self.encoded.get().expect("image has neither pixels nor bytes");
+        let bytes = self
+            .encoded
+            .get()
+            .expect("image has neither pixels nor bytes");
         match image::load_from_memory(bytes) {
             Ok(img) => Arc::new(img.into_rgba8().into_raw()),
             Err(e) => {
@@ -169,7 +172,10 @@ impl ImageData {
         let bytes = self
             .encoded
             .get_or_init(|| {
-                let rgba = self.pixels().clone().expect("image has neither pixels nor bytes");
+                let rgba = self
+                    .pixels()
+                    .clone()
+                    .expect("image has neither pixels nor bytes");
                 let mut out = Vec::new();
                 let encoder = image::codecs::png::PngEncoder::new_with_quality(
                     &mut out,
@@ -520,7 +526,11 @@ mod tests {
     #[test]
     fn z_order() {
         let mut doc = Document::new("t");
-        let ids = doc.apply(Edit::Add(vec![rect_kind(0.0), rect_kind(1.0), rect_kind(2.0)]));
+        let ids = doc.apply(Edit::Add(vec![
+            rect_kind(0.0),
+            rect_kind(1.0),
+            rect_kind(2.0),
+        ]));
         doc.apply(Edit::ToFront(HashSet::from([ids[0]])));
         assert_eq!(doc.objects.last().unwrap().id, ids[0]);
         doc.apply(Edit::ToBack(HashSet::from([ids[2]])));
@@ -557,6 +567,9 @@ mod tests {
         let board = cam.to_board(anchor);
         cam.zoom_around(anchor, 2.0);
         assert!((cam.to_screen(board) - anchor).length() < 1e-3);
-        assert!((cam.to_board(cam.to_screen(Pos2::new(3.0, 4.0))) - Pos2::new(3.0, 4.0)).length() < 1e-4);
+        assert!(
+            (cam.to_board(cam.to_screen(Pos2::new(3.0, 4.0))) - Pos2::new(3.0, 4.0)).length()
+                < 1e-4
+        );
     }
 }

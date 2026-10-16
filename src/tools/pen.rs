@@ -33,8 +33,13 @@ impl PenTool {
         if input.down || input.released {
             if highlighter && input.shift {
                 self.points.truncate(1);
-                self.points.push(geom::snap_angle(self.points[0], input.pos, 15.0));
-            } else if self.points.last().is_none_or(|l| l.distance(input.pos) > 0.5 * input.px) {
+                self.points
+                    .push(geom::snap_angle(self.points[0], input.pos, 15.0));
+            } else if self
+                .points
+                .last()
+                .is_none_or(|l| l.distance(input.pos) > 0.5 * input.px)
+            {
                 self.points.push(input.pos);
             }
         }
@@ -51,15 +56,31 @@ impl PenTool {
         } else {
             raw
         };
-        let style = if highlighter { settings.highlight_style() } else { settings.pen_style() };
-        Some(Edit::Add(vec![ObjectKind::Stroke { points, style, highlighter }]))
+        let style = if highlighter {
+            settings.highlight_style()
+        } else {
+            settings.pen_style()
+        };
+        Some(Edit::Add(vec![ObjectKind::Stroke {
+            points,
+            style,
+            highlighter,
+        }]))
     }
 
     pub fn preview(&self, settings: &Settings, highlighter: bool) -> Option<ObjectKind> {
         if !self.active || self.points.is_empty() {
             return None;
         }
-        let style = if highlighter { settings.highlight_style() } else { settings.pen_style() };
-        Some(ObjectKind::Stroke { points: self.points.clone(), style, highlighter })
+        let style = if highlighter {
+            settings.highlight_style()
+        } else {
+            settings.pen_style()
+        };
+        Some(ObjectKind::Stroke {
+            points: self.points.clone(),
+            style,
+            highlighter,
+        })
     }
 }

@@ -85,10 +85,13 @@ fn single_linear(doc: &Document) -> Option<&Object> {
 
 fn handles(doc: &Document) -> Vec<(Handle, Pos2)> {
     if let Some(obj) = single_linear(doc)
-        && let ObjectKind::Shape { a, b, .. } = obj.kind {
-            return vec![(Handle::End(false), a), (Handle::End(true), b)];
-        }
-    let Some(r) = selection_bounds(doc) else { return Vec::new() };
+        && let ObjectKind::Shape { a, b, .. } = obj.kind
+    {
+        return vec![(Handle::End(false), a), (Handle::End(true), b)];
+    }
+    let Some(r) = selection_bounds(doc) else {
+        return Vec::new();
+    };
     let mut out = Vec::with_capacity(8);
     for hy in -1i8..=1 {
         for hx in -1i8..=1 {
@@ -136,19 +139,26 @@ impl SelectTool {
         let tol = 4.0 * input.px;
         if input.double_clicked
             && let Some(obj) = doc.hit(input.pos, tol)
-                && matches!(obj.kind, ObjectKind::Text { .. }) {
-                    self.mode = Mode::Idle;
-                    return Outcome::EditText(obj.id);
-                }
+            && matches!(obj.kind, ObjectKind::Text { .. })
+        {
+            self.mode = Mode::Idle;
+            return Outcome::EditText(obj.id);
+        }
         if let Some(handle) = handle_at(doc, input.pos, input.px) {
             self.mode = match handle {
                 Handle::End(b) => Mode::Endpoint {
                     b,
-                    original: single_linear(doc).expect("end handles imply one line").clone(),
+                    original: single_linear(doc)
+                        .expect("end handles imply one line")
+                        .clone(),
                     moved: false,
                 },
                 Handle::Box(hx, hy) => {
-                    let originals: Vec<Object> = doc.selected_objects().iter().map(|o| (**o).clone()).collect();
+                    let originals: Vec<Object> = doc
+                        .selected_objects()
+                        .iter()
+                        .map(|o| (**o).clone())
+                        .collect();
                     let geo_from = originals
                         .iter()
                         .map(|o| geom::shape_bounds(&o.kind))
@@ -175,7 +185,11 @@ impl SelectTool {
             }
             self.mode = Mode::Moving {
                 start: input.pos,
-                originals: doc.selected_objects().iter().map(|o| (**o).clone()).collect(),
+                originals: doc
+                    .selected_objects()
+                    .iter()
+                    .map(|o| (**o).clone())
+                    .collect(),
                 clicked: id,
                 moved: false,
             };
@@ -184,7 +198,11 @@ impl SelectTool {
         if !input.shift {
             doc.selection.clear();
         }
-        self.mode = Mode::Box { start: input.pos, end: input.pos, additive: input.shift };
+        self.mode = Mode::Box {
+            start: input.pos,
+            end: input.pos,
+            additive: input.shift,
+        };
         Outcome::None
     }
 
@@ -198,11 +216,20 @@ impl SelectTool {
         };
         match &mut self.mode {
             Mode::Idle => {}
-            Mode::Moving { start, originals, moved, .. } => {
+            Mode::Moving {
+                start,
+                originals,
+                moved,
+                ..
+            } => {
                 let mut d = input.pos - *start;
                 if input.shift {
                     // Lock to the dominant axis.
-                    if d.x.abs() > d.y.abs() { d.y = 0.0 } else { d.x = 0.0 }
+                    if d.x.abs() > d.y.abs() {
+                        d.y = 0.0
+                    } else {
+                        d.x = 0.0
+                    }
                 }
                 if !*moved && d.length() < 2.0 * input.px {
                     return;
@@ -210,11 +237,20 @@ impl SelectTool {
                 begin(doc, moved);
                 let new = originals
                     .iter()
-                    .map(|o| Object { id: o.id, kind: geom::translate(&o.kind, d) })
+                    .map(|o| Object {
+                        id: o.id,
+                        kind: geom::translate(&o.kind, d),
+                    })
                     .collect();
                 doc.apply_no_history(Edit::Replace(new));
             }
-            Mode::Resizing { handle, from, geo_from, originals, moved } => {
+            Mode::Resizing {
+                handle,
+                from,
+                geo_from,
+                originals,
+                moved,
+            } => {
                 let to = resized(*from, *handle, input.pos, input.shift);
                 if !*moved && to == *from {
                     return;
@@ -227,21 +263,39 @@ impl SelectTool {
                 };
                 let new = originals
                     .iter()
-                    .map(|o| Object { id: o.id, kind: geom::transform(&o.kind, *geo_from, geo_to) })
+                    .map(|o| Object {
+                        id: o.id,
+                        kind: geom::transform(&o.kind, *geo_from, geo_to),
+                    })
                     .collect();
                 doc.apply_no_history(Edit::Replace(new));
             }
             Mode::Endpoint { b, original, moved } => {
-                let ObjectKind::Shape { shape, a: oa, b: ob, style } = original.kind.clone() else {
+                let ObjectKind::Shape {
+                    shape,
+                    a: oa,
+                    b: ob,
+                    style,
+                } = original.kind.clone()
+                else {
                     return;
                 };
                 let other = if *b { oa } else { ob };
-                let p = if input.shift { geom::snap_angle(other, input.pos, 15.0) } else { input.pos };
+                let p = if input.shift {
+                    geom::snap_angle(other, input.pos, 15.0)
+                } else {
+                    input.pos
+                };
                 begin(doc, moved);
                 let (a, bb) = if *b { (oa, p) } else { (p, ob) };
                 doc.apply_no_history(Edit::Replace(vec![Object {
                     id: original.id,
-                    kind: ObjectKind::Shape { shape, a, b: bb, style },
+                    kind: ObjectKind::Shape {
+                        shape,
+                        a,
+                        b: bb,
+                        style,
+                    },
                 }]));
             }
             Mode::Box { end, .. } => *end = input.pos,
@@ -250,7 +304,11 @@ impl SelectTool {
 
     fn release(&mut self, doc: &mut Document, input: &Input) {
         match std::mem::replace(&mut self.mode, Mode::Idle) {
-            Mode::Box { start, end, additive } => {
+            Mode::Box {
+                start,
+                end,
+                additive,
+            } => {
                 let r = Rect::from_two_pos(start, end);
                 if r.width().max(r.height()) < 2.0 * input.px {
                     return;
@@ -264,7 +322,11 @@ impl SelectTool {
                     }
                 }
             }
-            Mode::Moving { clicked, moved: false, .. } if !input.shift => {
+            Mode::Moving {
+                clicked,
+                moved: false,
+                ..
+            } if !input.shift => {
                 // Clicking one object of a multi-selection without dragging selects just it.
                 doc.selection = HashSet::from([clicked]);
             }
@@ -277,13 +339,25 @@ impl SelectTool {
         for o in &doc.objects {
             if doc.selection.contains(&o.id) {
                 let r = cam.rect_to_screen(geom::bounds(&o.kind)).expand(2.0);
-                painter.rect_stroke(r, 0.0, Stroke::new(1.0, ACCENT.gamma_multiply(0.6)), StrokeKind::Outside);
+                painter.rect_stroke(
+                    r,
+                    0.0,
+                    Stroke::new(1.0, ACCENT.gamma_multiply(0.6)),
+                    StrokeKind::Outside,
+                );
             }
         }
-        if doc.selection.len() > 1 && single_linear(doc).is_none()
-            && let Some(r) = selection_bounds(doc) {
-                painter.rect_stroke(cam.rect_to_screen(r).expand(4.0), 0.0, thin, StrokeKind::Outside);
-            }
+        if doc.selection.len() > 1
+            && single_linear(doc).is_none()
+            && let Some(r) = selection_bounds(doc)
+        {
+            painter.rect_stroke(
+                cam.rect_to_screen(r).expand(4.0),
+                0.0,
+                thin,
+                StrokeKind::Outside,
+            );
+        }
         if !matches!(self.mode, Mode::Moving { moved: true, .. }) {
             for (_, p) in handles(doc) {
                 let r = Rect::from_center_size(cam.to_screen(p), Vec2::splat(HANDLE_SIZE));
@@ -292,7 +366,13 @@ impl SelectTool {
         }
         if let Mode::Box { start, end, .. } = self.mode {
             let r = Rect::from_two_pos(cam.to_screen(start), cam.to_screen(end));
-            painter.rect(r, 0.0, ACCENT.gamma_multiply(0.08), thin, StrokeKind::Inside);
+            painter.rect(
+                r,
+                0.0,
+                ACCENT.gamma_multiply(0.08),
+                thin,
+                StrokeKind::Inside,
+            );
         }
     }
 
@@ -343,20 +423,36 @@ fn resized(from: Rect, (hx, hy): (i8, i8), p: Pos2, keep_aspect: bool) -> Rect {
         // Follow whichever axis moved further, sized off the fixed corner.
         if (w / aspect).abs() > h.abs() {
             let nh = (w / aspect).abs() * h.signum();
-            if hy == -1 { min.y = max.y - nh } else { max.y = min.y + nh }
+            if hy == -1 {
+                min.y = max.y - nh
+            } else {
+                max.y = min.y + nh
+            }
         } else {
             let nw = (h * aspect).abs() * w.signum();
-            if hx == -1 { min.x = max.x - nw } else { max.x = min.x + nw }
+            if hx == -1 {
+                min.x = max.x - nw
+            } else {
+                max.x = min.x + nw
+            }
         }
     }
     // Keep a minimum size so objects can't collapse to nothing. Flipping past zero is allowed.
     let w = max.x - min.x;
     let h = max.y - min.y;
     if w.abs() < 1.0 {
-        if hx == -1 { min.x = max.x - 1.0 } else if hx == 1 { max.x = min.x + 1.0 }
+        if hx == -1 {
+            min.x = max.x - 1.0
+        } else if hx == 1 {
+            max.x = min.x + 1.0
+        }
     }
     if h.abs() < 1.0 {
-        if hy == -1 { min.y = max.y - 1.0 } else if hy == 1 { max.y = min.y + 1.0 }
+        if hy == -1 {
+            min.y = max.y - 1.0
+        } else if hy == 1 {
+            max.y = min.y + 1.0
+        }
     }
     Rect { min, max }
 }

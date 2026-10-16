@@ -30,30 +30,42 @@ impl Clipboard {
         let inner = arboard::Clipboard::new()
             .inspect_err(|e| eprintln!("drafty: clipboard unavailable: {e}"))
             .ok();
-        Self { inner, fallback: on_wayland() }
+        Self {
+            inner,
+            fallback: on_wayland(),
+        }
     }
 
     /// A clipboard that never touches the system one, for tests.
     #[cfg(test)]
     pub fn disabled() -> Self {
-        Self { inner: None, fallback: false }
+        Self {
+            inner: None,
+            fallback: false,
+        }
     }
 
     pub fn get_image(&mut self) -> Option<RgbaImage> {
         if let Some(cb) = &mut self.inner
-            && let Ok(img) = cb.get_image() {
-                return Some(RgbaImage {
-                    size: [img.width as u32, img.height as u32],
-                    rgba: img.bytes.into_owned(),
-                });
-            }
+            && let Ok(img) = cb.get_image()
+        {
+            return Some(RgbaImage {
+                size: [img.width as u32, img.height as u32],
+                rgba: img.bytes.into_owned(),
+            });
+        }
         if self.fallback {
             return wl_paste_image();
         }
         None
     }
 
-    pub fn set_image(&mut self, size: [u32; 2], rgba: Vec<u8>, png: impl FnOnce() -> Vec<u8>) -> Result<(), String> {
+    pub fn set_image(
+        &mut self,
+        size: [u32; 2],
+        rgba: Vec<u8>,
+        png: impl FnOnce() -> Vec<u8>,
+    ) -> Result<(), String> {
         let mut err = String::from("no clipboard");
         if let Some(cb) = &mut self.inner {
             let data = arboard::ImageData {
@@ -90,7 +102,10 @@ fn wl_paste_image() -> Option<RgbaImage> {
         return None;
     }
     let img = image::load_from_memory(&out.stdout).ok()?.into_rgba8();
-    Some(RgbaImage { size: [img.width(), img.height()], rgba: img.into_raw() })
+    Some(RgbaImage {
+        size: [img.width(), img.height()],
+        rgba: img.into_raw(),
+    })
 }
 
 fn wl_copy_png(png: &[u8]) -> bool {
@@ -102,7 +117,10 @@ fn wl_copy_png(png: &[u8]) -> bool {
     else {
         return false;
     };
-    let wrote = child.stdin.take().is_some_and(|mut s| s.write_all(png).is_ok());
+    let wrote = child
+        .stdin
+        .take()
+        .is_some_and(|mut s| s.write_all(png).is_ok());
     wrote && child.wait().is_ok_and(|s| s.success())
 }
 

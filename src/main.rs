@@ -22,7 +22,9 @@ fn main() -> eframe::Result {
     for arg in std::env::args_os().skip(1) {
         match arg.to_str() {
             Some("-h" | "--help") => {
-                println!("usage: drafty [FILE...]\n\nOpens .drafty boards and PNG/JPEG images as tabs.");
+                println!(
+                    "usage: drafty [FILE...]\n\nOpens .drafty boards and PNG/JPEG images as tabs."
+                );
                 return Ok(());
             }
             Some("-V" | "--version") => {
@@ -42,12 +44,20 @@ fn main() -> eframe::Result {
     if let Ok(icon) = eframe::icon_data::from_png_bytes(ICON_PNG) {
         viewport = viewport.with_icon(icon);
     }
-    let options = eframe::NativeOptions { viewport, ..Default::default() };
+    let options = eframe::NativeOptions {
+        viewport,
+        ..Default::default()
+    };
     eframe::run_native(
         "Drafty",
         options,
         Box::new(|cc| {
-            let app = app::App::new(&cc.egui_ctx, files, session::Session::new(), clipboard::Clipboard::new());
+            let app = app::App::new(
+                &cc.egui_ctx,
+                files,
+                session::Session::new(),
+                clipboard::Clipboard::new(),
+            );
             Ok(Box::new(app))
         }),
     )

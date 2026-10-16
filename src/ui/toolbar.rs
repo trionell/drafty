@@ -13,12 +13,17 @@ use crate::tools::{FONT_SIZES, HIGHLIGHT_WIDTHS, PALETTE, PEN_WIDTHS, Tool};
 const BUTTON: f32 = 30.0;
 
 /// A square button with a painted icon. `paint` gets the icon area and the foreground color.
-fn icon_button(ui: &mut Ui, selected: bool, paint: impl FnOnce(&Painter, Rect, Color32)) -> Response {
+fn icon_button(
+    ui: &mut Ui,
+    selected: bool,
+    paint: impl FnOnce(&Painter, Rect, Color32),
+) -> Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(BUTTON), Sense::click());
     if ui.is_rect_visible(rect) {
         let v = ui.style().interact_selectable(&response, selected);
         if selected || response.hovered() {
-            ui.painter().rect(rect, 5.0, v.weak_bg_fill, v.bg_stroke, StrokeKind::Inside);
+            ui.painter()
+                .rect(rect, 5.0, v.weak_bg_fill, v.bg_stroke, StrokeKind::Inside);
         }
         paint(ui.painter(), rect.shrink(7.0), v.fg_stroke.color);
     }
@@ -30,16 +35,32 @@ fn paint_tool_icon(p: &Painter, r: Rect, tool: Tool, c: Color32) {
     let at = |x: f32, y: f32| r.min + vec2(x * r.width(), y * r.height());
     match tool {
         Tool::Select => {
-            let pts = vec![at(0.2, 0.0), at(0.2, 0.85), at(0.42, 0.65), at(0.58, 1.0), at(0.7, 0.94), at(0.55, 0.6), at(0.85, 0.6)];
+            let pts = vec![
+                at(0.2, 0.0),
+                at(0.2, 0.85),
+                at(0.42, 0.65),
+                at(0.58, 1.0),
+                at(0.7, 0.94),
+                at(0.55, 0.6),
+                at(0.85, 0.6),
+            ];
             p.add(Shape::closed_line(pts, s));
         }
         Tool::Pen => {
             p.line_segment([at(0.15, 0.85), at(0.8, 0.2)], Stroke::new(3.0, c));
-            p.add(Shape::convex_polygon(vec![at(0.0, 1.0), at(0.08, 0.72), at(0.28, 0.92)], c, Stroke::NONE));
+            p.add(Shape::convex_polygon(
+                vec![at(0.0, 1.0), at(0.08, 0.72), at(0.28, 0.92)],
+                c,
+                Stroke::NONE,
+            ));
         }
         Tool::Highlighter => {
             let y = Color32::from_rgb(0xfd, 0xd8, 0x35);
-            p.rect_filled(Rect::from_min_max(at(0.0, 0.55), at(1.0, 0.9)), 1.0, y.gamma_multiply(0.7));
+            p.rect_filled(
+                Rect::from_min_max(at(0.0, 0.55), at(1.0, 0.9)),
+                1.0,
+                y.gamma_multiply(0.7),
+            );
             p.line_segment([at(0.3, 0.6), at(0.85, 0.05)], Stroke::new(4.0, c));
         }
         Tool::Text => {
@@ -47,13 +68,25 @@ fn paint_tool_icon(p: &Painter, r: Rect, tool: Tool, c: Color32) {
             p.line_segment([at(0.5, 0.1), at(0.5, 0.95)], Stroke::new(2.2, c));
         }
         Tool::Rect => {
-            p.rect_stroke(Rect::from_min_max(at(0.0, 0.15), at(1.0, 0.85)), 1.0, s, StrokeKind::Middle);
+            p.rect_stroke(
+                Rect::from_min_max(at(0.0, 0.15), at(1.0, 0.85)),
+                1.0,
+                s,
+                StrokeKind::Middle,
+            );
         }
         Tool::Ellipse => {
-            p.add(Shape::ellipse_stroke(r.center(), vec2(r.width() * 0.5, r.height() * 0.4), s));
+            p.add(Shape::ellipse_stroke(
+                r.center(),
+                vec2(r.width() * 0.5, r.height() * 0.4),
+                s,
+            ));
         }
         Tool::Triangle => {
-            p.add(Shape::closed_line(vec![at(0.5, 0.05), at(1.0, 0.95), at(0.0, 0.95)], s));
+            p.add(Shape::closed_line(
+                vec![at(0.5, 0.05), at(1.0, 0.95), at(0.0, 0.95)],
+                s,
+            ));
         }
         Tool::Line => {
             p.line_segment([at(0.05, 0.95), at(0.95, 0.05)], s);
@@ -76,7 +109,11 @@ fn paint_arrow(p: &Painter, a: Pos2, b: Pos2, c: Color32, double: bool) {
         let d = (tip - from).normalized();
         let base = tip - d * 6.0;
         let n = d.rot90() * 3.5;
-        p.add(Shape::convex_polygon(vec![tip, base + n, base - n], c, Stroke::NONE));
+        p.add(Shape::convex_polygon(
+            vec![tip, base + n, base - n],
+            c,
+            Stroke::NONE,
+        ));
     };
     head(a, b);
     if double {
@@ -88,11 +125,14 @@ fn swatch(ui: &mut Ui, color: Color32, selected: bool) -> Response {
     let (rect, response) = ui.allocate_exact_size(vec2(20.0, BUTTON), Sense::click());
     let center = rect.center();
     let outline = ui.visuals().widgets.noninteractive.bg_stroke.color;
-    ui.painter().circle(center, 8.0, color, Stroke::new(1.0, outline));
+    ui.painter()
+        .circle(center, 8.0, color, Stroke::new(1.0, outline));
     if selected {
-        ui.painter().circle_stroke(center, 10.5, Stroke::new(2.0, crate::tools::select::ACCENT));
+        ui.painter()
+            .circle_stroke(center, 10.5, Stroke::new(2.0, crate::tools::select::ACCENT));
     } else if response.hovered() {
-        ui.painter().circle_stroke(center, 10.5, Stroke::new(1.0, outline));
+        ui.painter()
+            .circle_stroke(center, 10.5, Stroke::new(1.0, outline));
     }
     response
 }
@@ -104,9 +144,11 @@ impl App {
             ui.spacing_mut().item_spacing.x = 3.0;
             for tool in Tool::ALL {
                 let tip = format!("{} ({})", tool.name(), tool.key().name());
-                if icon_button(ui, self.tool == tool, |p, r, c| paint_tool_icon(p, r, tool, c))
-                    .on_hover_text(tip)
-                    .clicked()
+                if icon_button(ui, self.tool == tool, |p, r, c| {
+                    paint_tool_icon(p, r, tool, c)
+                })
+                .on_hover_text(tip)
+                .clicked()
                 {
                     self.set_tool(tool);
                 }
@@ -118,7 +160,11 @@ impl App {
             self.style_bar(ui);
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.button(" ? ").on_hover_text("Keyboard shortcuts (?)").clicked() {
+                if ui
+                    .button(" ? ")
+                    .on_hover_text("Keyboard shortcuts (?)")
+                    .clicked()
+                {
                     self.show_help = !self.show_help;
                 }
                 let zoom = self.doc().camera.zoom;
@@ -152,30 +198,49 @@ impl App {
         let ctx_tool = self.style_context();
         let current = self.settings.color_for(ctx_tool);
         for (i, c) in PALETTE.iter().enumerate() {
-            if swatch(ui, *c, *c == current).on_hover_text(format!("Color ({})", i + 1)).clicked() {
+            if swatch(ui, *c, *c == current)
+                .on_hover_text(format!("Color ({})", i + 1))
+                .clicked()
+            {
                 self.apply_color(*c);
             }
         }
         let mut c = current;
-        if egui::color_picker::color_edit_button_srgba(ui, &mut c, egui::color_picker::Alpha::Opaque)
-            .on_hover_text("Custom color")
-            .changed()
+        if egui::color_picker::color_edit_button_srgba(
+            ui,
+            &mut c,
+            egui::color_picker::Alpha::Opaque,
+        )
+        .on_hover_text("Custom color")
+        .changed()
         {
             self.apply_color(c);
         }
         ui.separator();
 
         if ctx_tool == Tool::Text {
-            let size = self.text.as_ref().map(|t| t.size).unwrap_or(self.settings.font_size);
+            let size = self
+                .text
+                .as_ref()
+                .map(|t| t.size)
+                .unwrap_or(self.settings.font_size);
             for (label, s) in FONT_SIZES {
-                if ui.selectable_label(size == s, label).on_hover_text(format!("Font size {s}")).clicked() {
+                if ui
+                    .selectable_label(size == s, label)
+                    .on_hover_text(format!("Font size {s}"))
+                    .clicked()
+                {
                     self.apply_font_size(s);
                 }
             }
             return;
         }
 
-        let presets = if ctx_tool == Tool::Highlighter { HIGHLIGHT_WIDTHS } else { PEN_WIDTHS };
+        let presets = if ctx_tool == Tool::Highlighter {
+            HIGHLIGHT_WIDTHS
+        } else {
+            PEN_WIDTHS
+        };
         let width = self.current_width();
         for w in presets {
             let dot = (w / presets[2] * 12.0).max(2.5);
@@ -190,7 +255,11 @@ impl App {
         }
         let mut w = width;
         ui.spacing_mut().slider_width = 70.0;
-        let resp = ui.add(egui::Slider::new(&mut w, 1.0..=64.0).logarithmic(true).fixed_decimals(0));
+        let resp = ui.add(
+            egui::Slider::new(&mut w, 1.0..=64.0)
+                .logarithmic(true)
+                .fixed_decimals(0),
+        );
         if resp.changed() {
             self.apply_width(w.round(), resp.dragged());
         }
@@ -241,7 +310,13 @@ impl App {
 
     fn selection_has_arrow(&self) -> bool {
         self.doc().selected_objects().iter().any(|o| {
-            matches!(o.kind, crate::doc::ObjectKind::Shape { shape: crate::doc::ShapeKind::Arrow { .. }, .. })
+            matches!(
+                o.kind,
+                crate::doc::ObjectKind::Shape {
+                    shape: crate::doc::ShapeKind::Arrow { .. },
+                    ..
+                }
+            )
         })
     }
 }

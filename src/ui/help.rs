@@ -10,43 +10,49 @@ impl App {
             ui.heading("Keyboard shortcuts");
             ui.add_space(8.0);
             ui.columns(2, |cols| {
-                egui::Grid::new("help-tools").num_columns(2).spacing([16.0, 4.0]).show(&mut cols[0], |ui| {
-                    for t in Tool::ALL {
-                        ui.label(RichText::new(t.key().name()).strong());
-                        ui.label(t.name());
-                        ui.end_row();
-                    }
-                    let rows = [
-                        ("1 – 8", "Pick color"),
-                        ("Shift + drag", "Square, circle, 15° lines"),
-                        ("Space + drag", "Pan"),
-                        ("Middle drag", "Pan"),
-                        ("Scroll", "Pan"),
-                        ("Ctrl + scroll", "Zoom"),
-                        ("Double-click text", "Edit text"),
-                        ("Alt+1 – 9", "Go to tab"),
-                    ];
-                    for (k, v) in rows {
-                        ui.label(RichText::new(k).strong());
-                        ui.label(v);
-                        ui.end_row();
-                    }
-                });
-                egui::Grid::new("help-keys").num_columns(2).spacing([16.0, 4.0]).show(&mut cols[1], |ui| {
-                    for s in &self.shortcuts {
-                        if let Some(help) = s.help {
-                            ui.label(RichText::new(s.label()).strong());
-                            ui.label(help);
+                egui::Grid::new("help-tools")
+                    .num_columns(2)
+                    .spacing([16.0, 4.0])
+                    .show(&mut cols[0], |ui| {
+                        for t in Tool::ALL {
+                            ui.label(RichText::new(t.key().name()).strong());
+                            ui.label(t.name());
                             ui.end_row();
                         }
-                    }
-                    {
-                        let (k, v) = ("Ctrl+C / Ctrl+V", "Copy / paste objects or images");
-                        ui.label(RichText::new(k).strong());
-                        ui.label(v);
-                        ui.end_row();
-                    }
-                });
+                        let rows = [
+                            ("1 – 8", "Pick color"),
+                            ("Shift + drag", "Square, circle, 15° lines"),
+                            ("Space + drag", "Pan"),
+                            ("Middle drag", "Pan"),
+                            ("Scroll", "Pan"),
+                            ("Ctrl + scroll", "Zoom"),
+                            ("Double-click text", "Edit text"),
+                            ("Alt+1 – 9", "Go to tab"),
+                        ];
+                        for (k, v) in rows {
+                            ui.label(RichText::new(k).strong());
+                            ui.label(v);
+                            ui.end_row();
+                        }
+                    });
+                egui::Grid::new("help-keys")
+                    .num_columns(2)
+                    .spacing([16.0, 4.0])
+                    .show(&mut cols[1], |ui| {
+                        for s in &self.shortcuts {
+                            if let Some(help) = s.help {
+                                ui.label(RichText::new(s.label()).strong());
+                                ui.label(help);
+                                ui.end_row();
+                            }
+                        }
+                        {
+                            let (k, v) = ("Ctrl+C / Ctrl+V", "Copy / paste objects or images");
+                            ui.label(RichText::new(k).strong());
+                            ui.label(v);
+                            ui.end_row();
+                        }
+                    });
             });
             ui.add_space(8.0);
             ui.vertical_centered(|ui| {
