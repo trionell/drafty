@@ -65,7 +65,7 @@ Shapes have stroke color, stroke width and a fill option: none, solid, or transl
 - `Ctrl+Shift+C` copies the whole board as a PNG to the clipboard. This is the main way out of the app, so it gets the shortest path.
 - With a selection, `Ctrl+Shift+C` copies only the selection as PNG.
 - `Ctrl+E` exports to a PNG file.
-- Export crops to the content bounds plus 16 px padding, renders at 2x for sharp text on HiDPI screens, and uses the board background color. A transparent background is an export option.
+- Export crops to the content bounds plus 16 px padding, renders at 2x for sharp text on HiDPI screens, and uses the board background color. The renderer supports a transparent background, but nothing in the UI turns it on yet.
 - `Ctrl+C`/`Ctrl+V` on selected objects copies objects, not pixels, so you can move things between tabs.
 
 ### Tabs
@@ -195,14 +195,39 @@ After M5 the core loop works end to end: paste screenshot, annotate, copy out. T
 ## Risks
 
 - **Clipboard images on Wayland.** `arboard` needs its `wayland-data-control` feature, and some compositors don't implement the data-control protocol. Fallback is shelling out to `wl-copy`/`wl-paste` when present. Test on the compositor actually in use early, in M5 at the latest, ideally with a throwaway spike in M0.
-- **Highlighter overlap.** egui draws a semi-transparent polyline as one mesh, and where the stroke crosses itself the alpha doubles, so you get dark blotches. Fix is to rasterize each highlighter stroke opaque into a texture with tiny-skia and draw that texture with alpha. Start with the simple version and switch if it looks bad.
+- **Highlighter overlap.** egui draws a semi-transparent polyline as one mesh, and where the stroke crosses itself the alpha doubles, so you get dark blotches. Drafty rasterizes each highlighter stroke opaque into a texture with tiny-skia and draws that texture with alpha. A golden test checks that a self-crossing stroke has no darker spot.
 - **Screen and export renderers drift apart.** Two renderers draw the same objects, egui on screen and tiny-skia for PNG. Golden-image tests on the export side plus a shared geometry module, where arrowheads, triangle points and smoothing live once, keep them in line.
 - **OpenGL on macOS.** Deprecated by Apple but still working. If it breaks, switching eframe to the wgpu backend is a feature flag change at the cost of a bigger binary.
 - **Text editing edge cases.** IME and dead keys go through egui/winit. Worth testing Swedish keyboard input (å, ä, ö) on both platforms in M4.
 
-## Open questions
+## Decisions
 
-1. Infinite board, or a fixed page size like Paint? The plan assumes infinite with export cropped to content. A fixed canvas would make exports predictable but you'd have to resize it.
-2. Should `Ctrl+Shift+C` also flash a short "Copied" toast? I'd say yes. It's cheap and you otherwise can't tell it worked.
-3. Default font. Plan assumes Inter. Any preference for a hand-drawn style like Excalidraw's?
-4. Name. "Drafty" comes from the repo name.
+1. Infinite board. Exports crop to content.
+2. `Ctrl+Shift+C` shows a short "Copied" toast.
+3. Inter, bundled.
+4. The name is Drafty.
+
+## Status
+
+M0 to M7 are implemented. Measured on Arch Linux, KDE Plasma, NVIDIA RTX 2070 Super, release build:
+
+| Metric | Target | Measured |
+|---|---|---|
+| Release binary, stripped | under 12 MB | 9.4 MB |
+| Cold start to usable window | under 300 ms | 105 ms empty, 171 ms opening three 4K screenshots |
+| CPU while idle | 0% | 0% |
+| Memory, 3 tabs with one 4K screenshot each | under 200 MB | 214 MB RSS, of which 52 MB is Drafty's own heap. About 100 MB of every run is the NVIDIA driver's shared libraries. |
+| CPU per frame while drawing, 5,000 objects | under 8 ms | 9.4 ms. 1,000 objects: 2.8 ms. |
+
+The frame-time miss is egui copying every vertex into each frame's output. The board's meshes are already cached between frames. Getting under 8 ms at 5,000 objects would mean rendering the board into a texture, which isn't worth it until a real board gets that big. `cargo test --release -- --ignored frame_time --nocapture` reruns the measurement.
+
+Not verified yet:
+
+- macOS. Nothing has been built or run on a Mac. `scripts/bundle-macos.sh` and the CI macOS job are untested.
+- Clipboard on a live desktop. Copying the board as PNG and pasting a screenshot are covered by tests only up to the clipboard boundary. Try both with a real chat app.
+- IME input and dead keys. Typing å, ä, ö through egui works in tests, but not through a real keyboard layout yet.
+
+Known limitations:
+
+- **No drag-and-drop on Wayland.** winit 0.30 only delivers dropped files on X11. On Wayland, paste the image or use `Ctrl+O`. Running with `WAYLAND_DISPLAY=` forces X11 through XWayland, where drag-and-drop works.
+- **macOS "Open With" doesn't pass the file.** Finder sends files as Apple Events, which winit doesn't forward. The bundle declares no document types for that reason.

@@ -340,7 +340,7 @@ fn text_tool_types_and_edits() {
     assert!(h.app.text.is_some());
     h.frame(vec![Event::Text("Hello".into())]);
     // Tool letters must type, not switch tools.
-    h.frame(vec![Event::Text(" pv".into())]);
+    h.frame(vec![Event::Text(" pv åäö".into())]);
     h.key(Key::Escape);
     h.frame(vec![]);
     assert!(h.app.text.is_none());
@@ -351,7 +351,7 @@ fn text_tool_types_and_edits() {
     else {
         panic!("{kinds:?}")
     };
-    assert_eq!(text, "Hello pv");
+    assert_eq!(text, "Hello pv åäö");
     assert!(extent.x > 20.0 && extent.y > 10.0, "{extent:?}");
     assert_eq!(h.app.tool, Tool::Text);
 
@@ -374,7 +374,7 @@ fn text_tool_types_and_edits() {
     let ObjectKind::Text { text, .. } = &kinds[0] else {
         panic!()
     };
-    assert_eq!(text, "Hello pv!");
+    assert_eq!(text, "Hello pv åäö!");
 }
 
 #[test]

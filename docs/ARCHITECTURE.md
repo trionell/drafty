@@ -1,6 +1,6 @@
 # Drafty architecture
 
-How the code is laid out and why. Scope and milestones are in `PLAN.md`.
+How the code is laid out and why. Scope, milestones and measured results are in `PLAN.md`.
 
 ## Dependencies
 
@@ -8,189 +8,161 @@ Keep this list short. Every crate added should replace code I'd otherwise write 
 
 | Crate | Use | Notes |
 |---|---|---|
-| `eframe` / `egui` | Window, input, GPU drawing, widgets | `default-features = false`, enable `glow`, `wayland`, `x11`, `default_fonts` off since we bundle our own font |
-| `arboard` | Clipboard text and images | Features `image-data`, `wayland-data-control` |
-| `image` | PNG/JPEG decode and PNG encode | `default-features = false`, features `png`, `jpeg` only |
+| `eframe` / `egui` 0.37 | Window, input, GPU drawing, widgets, text layout | `default-features = false`; features `glow`, `wayland`, `x11`, `clipboard`. No default fonts: Inter is bundled. |
+| `arboard` | Clipboard images | Features `image-data`, `wayland-data-control` |
+| `image` | PNG/JPEG decode and PNG encode | Features `png`, `jpeg` only |
 | `tiny-skia` | CPU rasterizer for PNG export and highlighter textures | |
-| `ab_glyph` | Glyph outlines for text in export | Same font file egui uses |
-| `rfd` | Open/save dialogs | Use the `xdg-portal` feature on Linux so it doesn't pull in GTK |
+| `ab_glyph` | Glyph outlines for text in export | Reads the same `Inter-Regular.ttf` egui uses |
+| `rfd` | Open/save dialogs | `xdg-portal` on Linux, so no GTK |
 | `serde`, `serde_json` | `.drafty` and session files | |
 | `base64` | Images inside `.drafty` JSON | |
 | `directories` | Platform data dir for the session | |
 
-No async runtime, no logging framework beyond `eprintln!` until there's a reason.
+No async runtime and no logging framework. Errors the user should see become toasts. The rest goes to stderr.
 
 ## Module layout
 
 ```
 src/
-  main.rs            CLI args, eframe::run_native, font setup
-  app.rs             App: tabs, active tool, current style, top-level update()
+  main.rs            CLI args, window options, eframe::run_native
+  app.rs             App: tabs, tools, shortcuts, clipboard, files, canvas input and painting
+  app_tests.rs       Drives App through egui with synthetic input
+  clipboard.rs       arboard wrapper with wl-copy/wl-paste fallback, object clipboard
+  session.rs         Autosave and restore of open tabs
   doc/
-    mod.rs           Document, Object, Style, ObjectId
-    geom.rs          Bounds, hit testing, arrowhead/triangle points, smoothing
-    history.rs       Undo/redo
-    io.rs            .drafty read/write, versioning
+    mod.rs           Document, Object, ObjectKind, Style, ImageData, Camera, Edit
+    geom.rs          Bounds, hit testing, arrowheads, triangles, smoothing, transforms
+    history.rs       Snapshot undo/redo
+    io.rs            .drafty read/write
   tools/
-    mod.rs           Tool enum and the ToolState trait
-    pen.rs           Pen and highlighter (same code, different style)
+    mod.rs           Tool enum, Settings (style for new objects), Input
+    pen.rs           Pen and highlighter
     shape.rs         Rect, ellipse, triangle, line, arrow
-    text.rs          Text placement and editing
-    select.rs        Selection, move, resize, box select
-    eraser.rs
+    select.rs        Select, move, resize, endpoints, box select
+    eraser.rs        Object eraser
   render/
-    screen.rs        Draws a Document with egui::Painter
+    mod.rs           tiny-skia helpers shared by both renderers
+    screen.rs        Draws a Document with egui, plus the texture and mesh cache
     export.rs        Draws a Document into a tiny_skia::Pixmap
   ui/
-    toolbar.rs       Tool buttons
-    stylebar.rs      Colors, widths, fill, font size
+    toolbar.rs       Tool buttons and style bar, painted icons
     tabs.rs          Tab strip
-    help.rs          Shortcut overlay
-  clipboard.rs       Image/object clipboard, Wayland fallback
-  session.rs         Autosave and restore
-assets/
-  Inter-Regular.ttf
-  icon.png, icon.icns, drafty.desktop
+    help.rs          Shortcut overlay and close prompt
+assets/              Inter font and license, icons, .desktop and MIME files
+scripts/             bundle-macos.sh
+tests/golden/        Expected export PNGs
 ```
 
-`doc/` has no egui dependency beyond `egui::Pos2`/`Rect`/`Color32` as plain math types. That keeps it unit-testable without a window.
+`doc/` uses egui only for its math and color types, so it's testable without a window. Text editing has no module of its own: it's a few functions in `app.rs` around an egui `TextEdit`.
 
 ## Data model
 
 ```rust
-pub struct ObjectId(u64);
-
 pub struct Document {
     pub title: String,
     pub path: Option<PathBuf>,
-    pub objects: Vec<Arc<Object>>,        // back to front
+    pub session_id: String,                      // names this tab's autosave file
+    pub objects: Vec<Arc<Object>>,               // back to front
     pub images: HashMap<ImageId, Arc<ImageData>>,
     pub camera: Camera,
     pub history: History,
     pub selection: HashSet<ObjectId>,
-    pub dirty: bool,
-    next_id: u64,
-}
-
-pub struct Object {
-    pub id: ObjectId,
-    pub kind: ObjectKind,
+    pub background: Color32,
+    pub rev: u64,                                // bumped on every change
+    pub file_rev: u64,                           // rev at last save to `path`
+    pub session_rev: u64,                        // rev at last autosave
 }
 
 pub enum ObjectKind {
     Stroke { points: Vec<Pos2>, style: Style, highlighter: bool },
     Shape  { shape: ShapeKind, a: Pos2, b: Pos2, style: Style },
-    Text   { pos: Pos2, text: String, size: f32, color: Color32 },
+    Text   { pos: Pos2, text: String, size: f32, color: Color32, extent: Vec2 },
     Image  { image: ImageId, rect: Rect },
-}
-
-pub enum ShapeKind { Rect, Ellipse, Triangle, Line, Arrow { double: bool } }
-
-pub struct Style {
-    pub color: Color32,
-    pub width: f32,
-    pub fill: Fill,                       // None | Solid | Translucent
-}
-
-pub struct ImageData {
-    pub png_bytes: Vec<u8>,               // original encoded bytes, for saving
-    pub size: [u32; 2],
-    pub texture: OnceCell<TextureHandle>, // uploaded lazily on first draw
 }
 ```
 
 All positions are board coordinates in logical pixels. Only the camera knows about the screen.
 
-Shapes store the two drag points `a` and `b` instead of a normalized rect. Lines and arrows need the direction, and rects/ellipses normalize when drawn. Resizing a shape moves `a` and `b`.
+Shapes store the two drag points `a` and `b` instead of a normalized rect. Lines and arrows need the direction, and triangles use it too: dragging upward draws one pointing down.
 
-`ImageId` is a hash of the encoded bytes, so pasting the same screenshot twice stores it once.
+`Text::extent` is the laid-out size at zoom 1. It's measured with egui's fonts whenever text or size changes, and re-measured after loading, since files don't store it.
+
+Revision counters replace a `dirty` flag. `is_dirty()` is `rev != file_rev`, plus "never saved and not empty". Autosave writes tabs whose `rev != session_rev`. The render cache keys on `rev`.
+
+### Images
+
+`ImageData` holds an image's encoded bytes and, only while needed, its decoded RGBA:
+
+- Opened from a file: the header gives the size, the id is a hash of the bytes, nothing gets decoded until the image is first drawn.
+- Pasted: starts as RGBA, the id is a hash of the pixels. A background thread encodes it to PNG right away, so the next autosave doesn't stall the UI.
+- Once encoded and uploaded to the GPU, the RGBA gets dropped. Export decodes again when it needs pixels.
+
+A 4K screenshot is 33 MB as RGBA, so this matters with a few tabs open.
 
 ## Camera
 
 ```rust
-pub struct Camera { pub offset: Vec2, pub zoom: f32 }   // screen = board * zoom + offset
+pub struct Camera { pub offset: Vec2, pub zoom: f32, pub origin: Pos2 }
+// screen = origin + board * zoom + offset
 ```
 
-Zoom clamps to 10%..800%. Zooming keeps the board point under the cursor fixed. Stroke widths scale with zoom, since they belong to the board, not the screen. Selection handles and hit tolerance stay a constant size on screen.
+`origin` is the canvas' top-left on screen, set every frame. Zoom clamps to 10%..800% and keeps the board point under the cursor fixed. Stroke widths scale with zoom; selection handles and hit tolerances don't.
 
 ## Rendering
 
 ### On screen
 
-`render/screen.rs` walks `objects` back to front, skips anything whose bounds miss the visible rect, and emits egui shapes:
+`render/screen.rs` turns objects into egui shapes:
 
-- Strokes become `PathShape` polylines with round joins. A single-point stroke becomes a filled circle so a click leaves a dot.
-- Highlighter strokes start as `PathShape` with alpha. If self-overlap blotches look bad, switch to a cached tiny-skia texture per stroke, re-rasterized when the zoom level changes by more than 2x (see Risks in `PLAN.md`).
-- Rect, ellipse and triangle become `RectShape`/`EllipseShape`/convex `PathShape` with fill then stroke.
-- Arrows are a line plus a filled triangle head from `geom::arrowhead(a, b, width)`. Head size grows with stroke width so thick arrows don't get tiny heads.
-- Text uses an egui `Galley` laid out with the bundled font at `size * zoom`.
-- Images draw their texture into `rect`.
+- Pen strokes are polylines with a filled circle at each end, since egui only draws butt caps.
+- Highlighter strokes are rasterized opaque with tiny-skia into a texture, then drawn at 40% alpha. tiny-skia fills a stroke's outline once, so a self-crossing stroke doesn't get darker where it crosses. Textures are cached per object at power-of-two scales and re-rasterized when zoom crosses a step.
+- Rect, ellipse and triangle draw fill then stroke. Arrows are a line plus filled heads from `geom::arrow_parts`; head size grows with stroke width.
+- Text is an egui `Galley` laid out at `size * zoom`.
+- Images draw a mipmapped texture into `rect`.
 
-Then the active tool draws its preview (the shape being dragged, the stroke in progress) and the select tool draws handles.
+egui tessellates every shape every frame, which was most of the frame time on big boards. So the board is cached as a list of runs: consecutive strokes and shapes tessellated into one `Mesh`, with images, text and highlighter strokes drawn individually between them to keep z-order. The cache key is the document id and `rev`, the camera, the clip rect, pixels per point, and the hidden and dimmed object sets. Drawing a new stroke changes none of those, so only the stroke in progress gets tessellated. Panning and zooming rebuild the cache every frame, which costs the same as before caching.
 
-egui re-tessellates every frame. With culling that is fine up to thousands of objects. If profiling shows otherwise, cache tessellated meshes per object keyed on `(ObjectId, zoom)`. Don't build that before measuring.
+After the board, the active tool draws its preview and the select tool draws handles.
 
 ### Export
 
-`render/export.rs` takes a `Document`, an optional selection, a scale and a background, and returns a `tiny_skia::Pixmap`:
+`render/export.rs` takes a `Document`, an optional set of objects, and a scale, and returns a `tiny_skia::Pixmap`:
 
-1. Union the bounds of the objects to export and add 16 px padding.
-2. Create a pixmap of `bounds.size() * scale`, fill the background.
-3. Draw each object with tiny-skia paths using the same `geom` helpers as the screen renderer.
-4. For text, get glyph positions from egui's `Galley` (the `egui::Context` is available at export time) and rasterize each glyph outline with `ab_glyph`. Layout happens once, in egui, so line breaks and spacing match the screen exactly.
-5. Images get decoded once to RGBA and drawn with a scaled pattern.
+1. Union the bounds of the exported objects and add 16 px padding.
+2. Scale down if the result would pass 16384 px a side or 100 million pixels.
+3. Draw each object with tiny-skia paths, using the same `geom` helpers as the screen.
+4. For text, lay out with egui's `Galley` so line breaks and spacing match the screen, then fill each glyph's outline from `ab_glyph`. egui's font size and ab_glyph's scale aren't defined the same way, so the scale is calibrated from a glyph's advance width.
+5. Images are premultiplied once per export and drawn with a bicubic pattern.
 
-The resulting `Pixmap` goes to `image` for PNG encoding, or to `arboard` as raw RGBA for the clipboard.
+Export renders the selection if there is one, else the whole board, at 2x.
 
 ## Tools
 
-```rust
-pub trait ToolState {
-    fn on_input(&mut self, ctx: &mut ToolCtx, input: &CanvasInput) -> Option<Edit>;
-    fn draw_preview(&self, painter: &Painter, camera: &Camera);
-    fn cursor(&self) -> CursorIcon;
-}
-```
+Each tool has a small state struct and an `input()` method taking an `Input`: pointer position in board units, pressed, down, released, double-clicked, shift, and board units per screen point for tolerances. Tools never see screen coordinates.
 
-`CanvasInput` is pointer position in board coordinates, press/drag/release, modifiers and scroll. The canvas widget converts egui input into it, after pan/zoom have taken their share. Tools never see screen coordinates.
+Pen, shape and eraser return an `Edit` when an action finishes, and `App` applies it. Select is different: dragging moves objects live, so it calls `Document::checkpoint()` on the first real movement and then `apply_no_history` every frame. The whole drag is one undo step, and a click without movement adds none.
 
-Tools return an `Edit` when an action finishes. They don't mutate the document directly. The document applies the edit and records history. That gives one place where changes happen and one place that sets `dirty`.
-
-The text tool is the exception that needs live state. While editing, it owns an egui `TextEdit` positioned over the canvas and commits an `Edit` when editing ends.
+A press and release can land in the same frame on a quick click. The canvas feeds them to the tool as two steps.
 
 ### Freehand capture
 
-- Drop new points closer than `0.5 / zoom` board px to the last one.
-- On release, run Ramer-Douglas-Peucker with tolerance `0.3 / zoom`, then Chaikin smoothing with 2 iterations.
-- While drawing, show the raw points. Smoothing on release avoids lag while the pen moves.
+- New points closer than half a screen pixel to the last one get dropped.
+- On release: Chaikin smoothing with 2 iterations, then Ramer-Douglas-Peucker at 0.15 screen px. Smoothing first gives round curves. Simplifying after it drops the points smoothing added on straight parts.
+- Shift with the highlighter keeps only the first point and the cursor, snapped to 15°.
 
-### Hit testing
+### Selecting and resizing
 
-`geom::hit(object, point, tolerance) -> bool`:
-
-- Stroke and line/arrow: distance to any segment ≤ `width / 2 + tolerance`.
-- Rect/ellipse/triangle: inside if filled, else near the outline.
-- Text and image: inside the bounds.
-
-Hit testing goes front to back so clicks pick the top object. The eraser uses the same test along the segment between the last and current pointer positions so fast drags don't skip objects.
+- Click selects the top object. Shift-click toggles. Dragging empty space draws a box that selects objects fully inside it.
+- With several objects selected, clicking one without dragging selects just that one.
+- Eight handles resize the selection's bounds. Shift on a corner keeps the aspect ratio. The handles sit on bounds including stroke width, but the geometry gets mapped between bounds without stroke width, so a shape's corner stays exactly where it was drawn.
+- A single selected line or arrow gets two endpoint handles instead.
+- Double-clicking text edits it.
 
 ## Undo and history
 
-Snapshot-based:
+Snapshot-based. Before an edit, the current `Vec<Arc<Object>>` goes onto the undo stack. That copies pointers, not objects: a snapshot of 5,000 objects is 40 KB, and unchanged objects are shared by every snapshot. 200 steps per tab.
 
-```rust
-pub struct History {
-    undo: Vec<Snapshot>,
-    redo: Vec<Snapshot>,
-}
-struct Snapshot { objects: Vec<Arc<Object>> }
-```
-
-Before applying an `Edit`, push the current `objects` vector onto `undo`. Cloning `Vec<Arc<Object>>` copies pointers only, so a snapshot of a board with 5,000 objects costs 40 KB. Changed objects get replaced with a new `Arc`, unchanged ones are shared across every snapshot. Cap at 200 entries.
-
-This is simpler than a command pattern with inverse operations and harder to get wrong. Images live outside the snapshots in `Document::images` and are never removed during a session, so undoing a delete brings the image back.
-
-Selection is not part of history. After undo/redo, drop selected ids that no longer exist.
+Images live outside the snapshots and stay for the session, so undoing a delete brings the image back. Selection isn't part of history; undo drops selected ids that no longer exist.
 
 ## File format
 
@@ -202,102 +174,89 @@ Selection is not part of history. After undo/redo, drop selected ids that no lon
   "version": 1,
   "title": "Board 1",
   "background": "#ffffff",
+  "view": { "offset": [0, 0], "zoom": 1 },
   "objects": [
     { "type": "stroke", "points": [[10,20],[12,24]], "color": "#e53935", "width": 4, "highlighter": false },
-    { "type": "shape", "shape": "arrow", "a": [0,0], "b": [100,40], "color": "#000000", "width": 3, "fill": "none", "double": false },
+    { "type": "shape", "shape": "arrow", "a": [0,0], "b": [100,40], "color": "#000000", "width": 3, "fill": "none", "double": true },
     { "type": "text", "pos": [50,60], "text": "this one", "size": 24, "color": "#000000" },
-    { "type": "image", "image": "9f2c...", "rect": [0,0,1920,1080] }
+    { "type": "image", "image": "9f2c41d07e3a5b18", "rect": [0,0,1920,1080] }
   ],
-  "images": { "9f2c...": "<base64 png or jpeg>" }
+  "images": { "9f2c41d07e3a5b18": "<base64 png or jpeg>" }
 }
 ```
 
-- JSON keeps files readable and diffable, and base64 adds a third to image size. A board with a couple of screenshots ends up a few MB. Acceptable. If it isn't, switch to a zip container in `version: 2`.
-- Unknown fields are ignored on load. A higher `version` than the app knows shows an error instead of guessing.
-- Points round to 2 decimals on save.
-- Write to `file.drafty.tmp`, then rename, so a crash mid-save never truncates the file.
+- JSON keeps files readable. base64 adds a third to image size; a board with a few screenshots is a few MB. If that becomes a problem, a zip container can be `version: 2`.
+- Unknown fields and unknown object types are skipped. A newer `version` is an error, not a guess.
+- Points round to 2 decimals.
+- Writes go to `file.drafty.tmp`, then a rename, so a crash mid-save never truncates the file.
 
 ## Session
 
-`session.rs` stores state in the platform data dir from `directories`: `~/.local/share/drafty/` on Linux and `~/Library/Application Support/drafty/` on macOS.
+`session.rs` keeps state in the platform data dir: `~/.local/share/drafty/` on Linux (respects `XDG_DATA_HOME`), `~/Library/Application Support/drafty/` on macOS.
 
 ```
-session.json         tab order, active tab, each tab's path if saved
-tabs/<uuid>.drafty   content of each open tab
+session.json           tab order, titles, paths, active tab, grid on/off
+tabs/<session_id>.drafty   content of each open tab
 ```
 
-- Autosave runs on the UI thread every 30 s if any tab is dirty, and on exit. Serializing a board takes milliseconds. If big boards make that noticeable, move the write onto a thread with a cloned `Vec<Arc<Object>>`.
-- Restore runs on launch. CLI file arguments open as extra tabs after the restored ones.
-- Closing a tab deletes its session file.
+- Autosave runs every 30 s while something changed, and on quit. When idle with unsaved changes, the app asks egui for one repaint at the next deadline instead of polling.
+- Only changed tabs get rewritten. Files of closed tabs get removed.
+- Startup restores the session, then opens command-line files as extra tabs. Anything that needs fonts, like measuring text, waits for the first frame, because egui has no fonts before then.
 
 ## Clipboard
 
-`clipboard.rs` wraps `arboard`:
+egui's clipboard handles text editing, and turns Ctrl+C/X/V into `Copy`, `Cut`, `Paste(text)` and `PasteImage` events. `App` handles those when no text box has focus:
 
-- `read_image() -> Option<RgbaImage>`
-- `write_image(&Pixmap)`
-- Object copy/paste goes in a private in-process buffer as `Vec<Object>` plus referenced images. Pasting into another tab copies the images over. Cross-process object paste isn't needed.
+- **Copy/Cut** puts the selected objects in an in-process buffer and writes a marker string to the system clipboard.
+- **Paste(text)** checks for an image on the clipboard first, since a browser image copy can also carry a URL. Then, if the text is still our marker, it pastes the objects. Otherwise it pastes the text as a text object.
+- **PasteImage** inserts the image.
 
-On Wayland, if `arboard` fails, fall back to `wl-paste --type image/png` and `wl-copy --type image/png` when they're on `PATH`.
-
-Arboard on Linux needs the app to keep the clipboard owner alive after a copy. Keep one `arboard::Clipboard` in `App` for the whole run instead of creating one per copy.
+`clipboard.rs` owns one `arboard::Clipboard` for the whole run, because on Linux the owner has to stay alive for other apps to read what we copied. It handles image reads for `Ctrl+Shift+V` and image writes for `Ctrl+Shift+C`. On Wayland, when arboard fails, it falls back to `wl-paste`/`wl-copy` if they're installed.
 
 ## Keyboard handling
 
-All shortcuts go through one table in `app.rs` mapping `(Modifiers, Key)` to an `Action`, using egui's `Modifiers::command` so `Ctrl` on Linux becomes `Cmd` on macOS. The help overlay renders from the same table, so it can't drift out of date.
+One table in `app.rs` maps `(Key, modifiers)` to an `Action`. `command` means Ctrl on Linux and Cmd on macOS. Matching is exact, so `Ctrl+Z` doesn't also fire on `Ctrl+Shift+Z`. The help overlay renders from the same table.
 
-Single-letter tool keys are ignored while a text box has focus.
+- Nothing fires while a text box has focus.
+- With the help overlay or close prompt open, only `?` and `Escape` work.
+- egui's own Ctrl+Plus/Minus/0 UI zoom is off, since those keys zoom the board.
 
 ## Build and install
 
 ### Linux
 
 ```sh
-cargo build --release
-make install          # copies binary, .desktop and icon into ~/.local
+make                  # cargo build --release
+make install          # into ~/.local
+sudo make install PREFIX=/usr/local
+make uninstall
 ```
 
-`make install` puts:
-- `target/release/drafty` → `~/.local/bin/drafty`
-- `assets/drafty.desktop` → `~/.local/share/applications/`
-- `assets/icon.png` → `~/.local/share/icons/hicolor/256x256/apps/drafty.png`
+`make install` puts the binary in `bin/`, plus the `.desktop` file, icons in the hicolor theme, and a MIME type for `.drafty`, then refreshes the desktop caches. With `DESTDIR` set, it skips the cache refresh, which is what packagers want. `install` never builds, so `sudo make install` never runs cargo as root.
 
-`PREFIX=/usr/local sudo make install` for a system install. A `PKGBUILD` for the AUR fits in a few lines once there's a tagged release.
-
-Build deps on Linux are only what winit and glow need: a C toolchain, `libxkbcommon`, `wayland`, and X11 libs. On Arch those are already present on any desktop install.
+Build dependencies are a Rust toolchain (1.88+) and a C compiler. On Arch, a desktop install already has the libraries winit needs at runtime.
 
 ### macOS
 
 ```sh
-cargo build --release
-./scripts/bundle-macos.sh      # creates target/Drafty.app
+./scripts/bundle-macos.sh               # target/Drafty.app for this Mac
+./scripts/bundle-macos.sh --universal   # Apple Silicon + Intel
 cp -r target/Drafty.app /Applications/
 ```
 
-`bundle-macos.sh` builds the `.app` layout by hand: `Contents/MacOS/drafty`, `Contents/Info.plist`, `Contents/Resources/icon.icns`. Then it runs `codesign --force --sign - Drafty.app` for an ad-hoc signature, which Apple Silicon requires for the binary to run. No notarization. Apps built locally aren't quarantined, so Gatekeeper doesn't complain.
-
-Twenty lines of shell beat adding `cargo-bundle` as a required tool. Universal binaries via `lipo` are an option in the script for sharing a build with Intel Mac users.
-
-### Release profile
-
-```toml
-[profile.release]
-opt-level = 3
-lto = "thin"
-codegen-units = 1
-strip = true
-panic = "abort"
-```
+The script builds, lays out the `.app` by hand, makes `drafty.icns` from `assets/icon-1024.png` with `sips` and `iconutil`, writes `Info.plist`, and signs ad hoc with `codesign --sign -`. Apple Silicon won't run unsigned binaries. There's no notarization; apps built locally aren't quarantined, so Gatekeeper doesn't complain.
 
 ### CI
 
-One GitHub Actions workflow with a Linux and a macOS job. Each runs `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, and a release build. It uploads the Linux binary and the zipped `.app` as artifacts. Optional, set up in M7.
+`.github/workflows/ci.yml` runs fmt, clippy with `-D warnings`, tests and a release build on Linux, and tests plus a universal `.app` on macOS. Both upload their build as an artifact.
 
 ## Testing
 
-- **Unit tests** in `doc/`: hit testing per object type, bounds, arrowhead geometry, smoothing keeps endpoints, history undo/redo/cap, snapshot sharing.
-- **Round-trip tests** in `doc/io.rs`: save then load equals the original, version mismatch errors, unknown fields ignored.
-- **Golden image tests** for `render/export.rs`: render small fixture boards and compare against PNGs in `tests/golden/` with a small per-pixel tolerance. tiny-skia is deterministic, so these stay stable across machines. `UPDATE_GOLDEN=1 cargo test` rewrites them.
-- **Manual checklist** per release, on Wayland, X11 and macOS: paste screenshot, annotate with each tool, copy out to a chat app, save, quit, relaunch, check session restore, type å/ä/ö in a text box.
+`cargo test` runs everything without a window:
 
-No UI automation. The UI is small and the manual checklist covers it.
+- **Unit tests** in `doc/`, `tools/select.rs` and `session.rs`: geometry, hit testing, history, file round trips, image memory release, session save and restore.
+- **App tests** in `app_tests.rs` run the real `App::show` inside `egui::Context::run_ui` with synthetic pointer and keyboard events, then check the document. They cover drawing with each tool, shift constraints, select/move/resize, undo, eraser, typing and editing text, paste, tabs, the close prompt, shortcuts behind dialogs, scroll and zoom, and session restore.
+- **Golden images** in `render/export.rs` compare exports against `tests/golden/*.png`, allowing a few pixels of drift. `UPDATE_GOLDEN=1 cargo test` rewrites them.
+- **Frame time**: `cargo test --release -- --ignored frame_time --nocapture` prints CPU time per frame with 1,000 and 5,000 strokes.
+
+The app tests don't reach the system clipboard, file dialogs, drag-and-drop or the GPU. Check those by hand before a release: paste a screenshot, annotate it with each tool, copy it out into a chat app, save, quit, relaunch, check the session came back, type å/ä/ö.
